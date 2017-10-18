@@ -1,4 +1,4 @@
-*Steps to use `.ipynb` to directly build readthedocs*
+# Steps to convert `.ipynb` to readthedocs
 
 `pip install sphinx`
 `pip install nbconvert`
