@@ -14,7 +14,9 @@ A lot more functions of `nbconvert` can be found here (http://nbconvert.readthed
 For setting up readthedocs:
 
 1. create a `readthedocs.yml` in the master repo dir:
-```# Read The Docs config
+
+```
+# Read The Docs config
 # - http://docs.readthedocs.io/en/latest/yaml-config.html
 
 # python version
@@ -29,10 +31,13 @@ formats:
 # use a conda environment file
 # - https://conda.io/docs/using/envs.html#share-an-environment
 conda:
-  file: documentation/readthedocs-environment.yml```
+   file: documentation/readthedocs-environment.yml
+```
 
  2. create a `readthedocs-environment.yml` in your documentation dir:
-```name: Your-Project-Name
+ 
+```
+name: Your-Project-Name
 channels:
   - conda-forge
 dependencies:
@@ -46,14 +51,17 @@ dependencies:
   - ipykernel
   - sphinx_rtd_theme
   - pip:
-    - nbsphinx```
+  - nbsphinx
+```
+
  3. modify the conf.py file in your documentation source dir:
 
- ```extensions = ['sphinx.ext.autodoc',
+ ```
+ extensions = ['sphinx.ext.autodoc',
               'sphinx.ext.githubpages',
               'nbsphinx',
               'sphinx.ext.mathjax',
               'IPython.sphinxext.ipython_console_highlighting']
-              ```
-```source_suffix = ['.rst', '.ipynb']```
+source_suffix = ['.rst', '.ipynb']
+```
 
