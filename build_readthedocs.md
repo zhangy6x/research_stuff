@@ -2,9 +2,9 @@
 
 `pip install sphinx`
 `pip install nbconvert`
-`pip install pandoc`
 `pip install latex`
 `pip install nbsphinx`
+`conda install pandoc`
 
 Then you can use the followed to build and preview locally
 ```python3 -m sphinx 'your_source_dir' 'your_build_dir'```
