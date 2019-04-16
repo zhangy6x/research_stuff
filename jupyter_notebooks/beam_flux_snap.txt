@@ -1,4 +1,4 @@
-wavelength (A)	Flux (n/s/cm2)
+Wavelength (A)	Flux (n/s/cm2)
 2.86E-04	8.62E+04
 3.03E-04	1.04E+05
 3.21E-04	1.54E+05
