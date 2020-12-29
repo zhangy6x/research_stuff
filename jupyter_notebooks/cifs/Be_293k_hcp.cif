@@ -1,0 +1,99 @@
+
+#(C) 2020 by FIZ Karlsruhe - Leibniz Institute for Information Infrastructure.  All rights reserved.
+data_1425-ICSD
+_database_code_ICSD 1425
+_audit_creation_date 1980-01-01
+_audit_update_record 2015-08-01
+_chemical_name_common Beryllium
+_chemical_formula_structural Be
+_chemical_formula_sum Be1
+_chemical_name_structure_type hcp#Mg
+_exptl_crystal_density_diffrn 1.85
+_citation_title
+
+;
+The electron density and bonding in beryllium metal as studied by Fourier
+methods
+;
+loop_
+_citation_id
+_citation_journal_full
+_citation_year
+_citation_journal_volume
+_citation_page_first
+_citation_page_last
+_citation_journal_id_ASTM
+primary
+
+;
+Acta Crystallographica, Section A: Crystal Physics, Diffraction, Theoretical
+and General Crystallography
+; 1978 34 61 65 ACACBN
+loop_
+_citation_author_citation_id
+_citation_author_name
+primary 'Yang, Y.W.'
+primary 'Coppens, P.'
+_cell_length_a 2.2858(2)
+_cell_length_b 2.2858(2)
+_cell_length_c 3.5843(3)
+_cell_angle_alpha 90.
+_cell_angle_beta 90.
+_cell_angle_gamma 120.
+_cell_volume 16.22
+_cell_formula_units_Z 2
+_space_group_name_H-M_alt 'P 63/m m c'
+_space_group_IT_number 194
+loop_
+_space_group_symop_id
+_space_group_symop_operation_xyz
+1 'x, x-y, -z+1/2'
+2 '-x+y, y, -z+1/2'
+3 '-y, -x, -z+1/2'
+4 '-x+y, -x, -z+1/2'
+5 '-y, x-y, -z+1/2'
+6 'x, y, -z+1/2'
+7 '-x, -x+y, z+1/2'
+8 'x-y, -y, z+1/2'
+9 'y, x, z+1/2'
+10 'x-y, x, z+1/2'
+11 'y, -x+y, z+1/2'
+12 '-x, -y, z+1/2'
+13 '-x, -x+y, -z'
+14 'x-y, -y, -z'
+15 'y, x, -z'
+16 'x-y, x, -z'
+17 'y, -x+y, -z'
+18 '-x, -y, -z'
+19 'x, x-y, z'
+20 '-x+y, y, z'
+21 '-y, -x, z'
+22 '-x+y, -x, z'
+23 '-y, x-y, z'
+24 'x, y, z'
+loop_
+_atom_type_symbol
+_atom_type_oxidation_number
+Be0+ 0
+loop_
+_atom_site_label
+_atom_site_type_symbol
+_atom_site_symmetry_multiplicity
+_atom_site_Wyckoff_symbol
+_atom_site_fract_x
+_atom_site_fract_y
+_atom_site_fract_z
+_atom_site_B_iso_or_equiv
+_atom_site_occupancy
+Be1 Be0+ 2 d 0.3333 0.6667 0.75 . 1.
+loop_
+_atom_site_aniso_label
+_atom_site_aniso_type_symbol
+_atom_site_aniso_U_11
+_atom_site_aniso_U_22
+_atom_site_aniso_U_33
+_atom_site_aniso_U_12
+_atom_site_aniso_U_13
+_atom_site_aniso_U_23
+Be1 Be0+ 0.00758(12) 0.00758(12) 0.00686(10) 0.00379 0 0
+#End of TTdata_1425-ICSD
