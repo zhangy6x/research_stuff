@@ -1,0 +1,19 @@
+CG1D:Det:A1:TIFF1:FileName,CG1D:Mot:ShortAxis,CG1D:Mot:LongAxis,CG1D:Mot:G0:X,CG1D:Det:A1:AcquireTime,Delay,Camera
+G0_stepping,96,350,92.4,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,,92.5,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,,92.6,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,118,92.4,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,,92.5,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,,92.6,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
+G0_stepping,,,,30,0,CCD 600
