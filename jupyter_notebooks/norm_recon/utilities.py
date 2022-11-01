@@ -7,6 +7,11 @@ import tomopy
 import svmbir
 import bm3d_streak_removal as bm3d_rmv
 
+def get_deg(fname:str):
+    _split = fname.split('_')
+    ang = _split[-3] + '.' + _split[-2]
+    return ang
+
 def get_ind_list(name_list: list):
 	ind = []
 	ang_deg = []
