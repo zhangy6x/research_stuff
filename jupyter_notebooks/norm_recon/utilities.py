@@ -1,40 +1,62 @@
 import math
 import dxchange
 import numpy as np
+import pandas as pd
 import os
 import glob
 import tomopy
 import svmbir
+from tqdm import tqdm
 import bm3d_streak_removal as bm3d_rmv
+
+# slit_box_corners = np.array([[ None,  None], [ None, None], [None, None], [None,  None]])
 
 def get_deg(fname:str):
     _split = fname.split('_')
     ang = _split[-3] + '.' + _split[-2]
     return ang
 
-def get_ind_list(name_list: list):
+def get_fname_df(name_list: list, golden_ratio=False):
 	ind = []
 	ang_deg = []
 	ang_rad = []
-	ind_dict_random = {}
-	ind_dict_sorted = {}
+	fname_df = pd.DataFrame()
 	for e_name in name_list:
 		_split = e_name.split('_')
 		_index_tiff = _split[-1]
 		_index = _index_tiff.split('.')[0]
-		_ang = _split[-3] + '.' + _split[-2]
+		if golden_ratio:
+    			_ang = _split[-4] + '.' + _split[-3]
+		else:
+			_ang = _split[-3] + '.' + _split[-2]
 		index = int(_index)
 		angle = float(_ang)
 		ind.append(index)
 		ang_deg.append(angle)
 		ang_rad.append(math.radians(angle))
-		ind_dict_random[index] = e_name
-	ind = sorted(ind)
-	for n, e_ind in enumerate(ind):
-		ind_dict_sorted[n] = ind_dict_random[e_ind]
+	fname_df['fname'] = name_list
+	fname_df['ang_deg'] = ang_deg
+	fname_df['ang_rad'] = ang_rad
+	fname_df['idx'] = ind
+	return fname_df
 
-	return list(ind_dict_sorted.values()), (sorted(ang_deg)), np.array(sorted(ang_rad)), ind
+def get_list_by_idx(name_list: list, golden_ratio=False):
+	fname_df = get_fname_df(name_list, golden_ratio)
+	fname_df.sort_values('idx', inplace=True)
+	fname = fname_df['fname'].to_list()
+	ang_deg = fname_df['ang_deg'].to_list()
+	ang_rad = fname_df['ang_rad'].to_list()
+	ind = fname_df['idx'].to_list()
+	return fname, ang_deg, ang_rad, ind
 
+def get_list_by_ang(name_list: list, golden_ratio=False):
+	fname_df = get_fname_df(name_list, golden_ratio)
+	fname_df.sort_values('ang_deg', inplace=True)
+	fname = fname_df['fname'].to_list()
+	ang_deg = fname_df['ang_deg'].to_list()
+	ang_rad = fname_df['ang_rad'].to_list()
+	ind = fname_df['idx'].to_list()
+	return fname, ang_deg, ang_rad, ind
 
 def get_list(name_list: list):
 	ind = []
@@ -65,15 +87,8 @@ def _init_arr_from_stack(fname, number_of_files, slc=None):
 
 def read_tiff_stack(fdir, fname: list):
 	arr = _init_arr_from_stack(os.path.join(fdir, fname[0]), len(fname))
-	for m, name in enumerate(fname):
+	for m, name in tqdm(enumerate(fname)):
 		arr[m] = dxchange.read_tiff(os.path.join(fdir, name))
-	return arr
-
-
-def read_tiff_from_full_name_list(list_files: list):
-	arr = _init_arr_from_stack(list_files[0], len(list_files))
-	for m, _file in enumerate(list_files):
-		arr[m] = dxchange.read_tiff(_file)
 	return arr
 
 
@@ -82,6 +97,12 @@ def find_proj180_ind(ang_list: list):
 	difmin = min(dif)
 	ind180 = dif.index(difmin)
 	return (ind180, ang_list[ind180])
+
+def find_idx_by_ang(ang_list: list, ang):
+	dif = [abs(x - ang) for x in ang_list]
+	difmin = min(dif)
+	ind = dif.index(difmin)
+	return (ind, ang_list[ind])
 
 
 def shrink_window(corners, size):
@@ -129,18 +150,22 @@ def get_name_and_idx(fdir):
 def load_ct(fdir, ang1=0, ang2=360, name="raw*"):
     if is_routine_ct(fdir):
         ct_list = os.listdir(fdir)
-        ct_name, ang_deg, theta, idx_list = get_ind_list(ct_list)
+        # ct_name, ang_deg, theta, idx_list = get_ind_list(ct_list)
+        ct_name, ang_deg, ang_rad, idx_list = get_list_by_ang(ct_list)
     else:
         ct_list = glob.glob(fdir+"/"+name)
         ct_name, idx_list = get_list(ct_list)
-        theta = tomopy.angles(len(idx_list), ang1=ang1, ang2=ang2) # Default 360 degree rotation
+        ang_rad = tomopy.angles(len(idx_list), ang1=ang1, ang2=ang2) # Default 360 degree rotation
         ang_deg = np.rad2deg(theta)
-    proj180_ind = find_proj180_ind(ang_deg)[0]
-    print('Found index of 180 degree projections: ', proj180_ind)
-    print('Loading CT projections...')
+    proj180_ind = find_idx_by_ang(ang_deg, 180)
+    proj000_ind = find_idx_by_ang(ang_deg, 0)
+    print('Found index of 180 degree projections: {} of angle {}'.format(proj180_ind[0], proj180_ind[1]))
+    print('Found index of 0 degree projections: {} of angle {}'.format(proj000_ind[0], proj000_ind[1]))
+    print('Loading {} CT projections...'.format(len(ct_name)))
     proj = read_tiff_stack(fdir=fdir, fname=ct_name)
-    print('Loading CT projections...Done!')
-    return proj, theta, proj180_ind
+    print('{} CT projections loaded!'.format(len(ct_name)))
+    print('Shape: {}'.format(proj.shape))
+    return proj, ang_deg, ang_rad, proj180_ind[0], proj000_ind[0], ct_name
 
     
 def load_ob(fdir, name="ob*"):
@@ -149,9 +174,10 @@ def load_ob(fdir, name="ob*"):
     else:
         ob_list = glob.glob(fdir+"/"+name)
         ob_name, idx_list = get_list(ob_list)
-    print("Loading Open Beam (OB)...")
+    print("Loading {} Open Beam (OB) images...".format(len(ob_name)))
     ob = read_tiff_stack(fdir=fdir, fname=ob_name)
-    print("Loading Open Beam (OB)...Done!")
+    print("{} Open Beam (OB) images loaded!".format(len(ob_name)))
+    print('Shape: {}'.format(ob.shape))
     return ob
 
 
@@ -161,11 +187,30 @@ def load_dc(fdir, name="dc*"):
     else:
         dc_list = glob.glob(fdir+"/"+name)
         dc_name, idx_list = get_list(dc_list)
-    print("Loading Dark Current (DC)...")
+    print("Loading {} Dark Current (DC) images...".format(len(dc_name)))
     dc = read_tiff_stack(fdir=fdir, fname=dc_name)
-    print("Loading Dark Current (DC)...Done!")
+    print("{} Dark Current (DC) images loaded!".format(len(dc_name)))
+    print('Shape: {}'.format(dc.shape))
     return dc
 
+##########################
+
+def load_static(fdir, name="dc*", diff="20"):
+    if is_routine_ct(fdir):
+        dc_name, idx_list = get_name_and_idx(fdir)
+    else:
+        dc_list = glob.glob(fdir+"/"+name)
+        dc_name, idx_list = get_list(dc_list)
+    dc = read_tiff_stack(fdir=fdir, fname=dc_name)
+    if dc.shape[0] == 1:
+    	dc_med = dc[:]
+    	print("Only 1 file loaded.")
+    else:
+    	dc = tomopy.misc.corr.remove_outlier(dc, diff)
+    	dc_med = np.median(dc, axis=0).astype(np.ushort)
+    return dc_med
+
+##########################
 
 def remove_ring(proj, algorithm="Vo"):
     if algorithm == "Vo":
@@ -193,4 +238,72 @@ def recon(proj, theta, rot_center, algorithm="gridrec"):
         recon = tomopy.recon(proj, theta, center=rot_center, algorithm=algorithm, sinogram_order=False)
     recon = tomopy.circ_mask(recon, axis=0, ratio=1)
     return recon
+
+################################################ Added on 11/01/2022
+
+def add_idx_to_front(old:str, index_min=0):
+    old_index = get_index_num(old)
+    end_num = int(old_index)
+    new_num = end_num - index_min
+    new_index = f'{index:04}'
+    new = new_index + "_" + old
+    return old
+    
+def get_last_str(fname:str):
+    _split = fname.split('_')
+    idx_tiff = _split[-1]
+    _idx_tiff_split = idx_tiff.split('.')
+    idx = _idx_tiff_split[0]
+    return idx
+    
+def remove_1st_str(fname:str):
+    _split = fname.split('_')
+    _split.pop(0)
+    new_fname = "_".join(_split)
+    return new_fname
+
+def remove_last_str(fname:str):
+    _split = fname.split('_')
+    last_ext = _split[-1]
+    _last_ext_split = last_ext.split('.')
+    ext = _last_ext_split[-1]
+    _split.pop(-1)
+    new_fname = "_".join(_split) + '.' + ext
+    return new_fname
+
+def normalize(proj, ob, dc):
+    if ob.shape[0] == 1:
+        ob_med = ob[:]
+        print("Only 1 OB loaded.")
+    else:
+        ob_med = np.median(ob, axis=0).astype(np.ushort)
+        print("OB stack combined by median.")
+    if dc.shape[0] == 1:
+        dc_med = dc[:]
+        print("Only 1 DC loaded.")
+    else:
+        dc_med = np.median(dc, axis=0).astype(np.ushort)
+        print("DC stack combined by median.")
+    print("Normalizing...")
+    _ob = ob_med - dc_med
+    _proj = proj - dc_med
+    proj_norm = np.true_divide(_proj, _ob, dtype=np.float32)
+    print("Normalization Done!")
+    return proj_norm, ob_med, dc_med
+
+def crop(stack, crop_left, crop_right, crop_top, crop_bottom, crop=True):
+    if len(stack.shape) == 3:
+    	if crop:
+    		new_stack = stack[:, crop_top:crop_bottom, crop_left:crop_right]
+    	else:
+    		new_stack = stack[:]
+    elif len(stack.shape) == 2:
+    	if crop:
+    		new_stack = stack[crop_top:crop_bottom, crop_left:crop_right]
+    	else:
+    		new_stack = stack[:]
+    else:
+    	print("Not a image, no cropping is done")
+    	new_stack = None
+    return new_stack
         
