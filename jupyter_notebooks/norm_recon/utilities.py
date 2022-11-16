@@ -272,19 +272,27 @@ def remove_last_str(fname:str):
     return new_fname
 
 def normalize(proj, ob, dc):
-    if ob.shape[0] == 1:
+#    assert len(proj.shape) == 2
+#    assert len(ob.shape) == 3
+#    assert len(dc.shape) == 3
+    if len(ob.shape) == 2:
         ob_med = ob[:]
         print("Only 1 OB loaded.")
-    else:
+    elif len(ob.shape) == 3:
         ob_med = np.median(ob, axis=0).astype(np.ushort)
         print("OB stack combined by median.")
-    if dc.shape[0] == 1:
+    if len(dc.shape) == 2:
         dc_med = dc[:]
         print("Only 1 DC loaded.")
-    else:
+    elif len(dc.shape) == 3:
         dc_med = np.median(dc, axis=0).astype(np.ushort)
         print("DC stack combined by median.")
     print("Normalizing...")
+#    if len(proj.shape) == 2:
+#        proj = proj[:]
+#    elif len(proj.shape) == 3:
+#        proj = np.median(proj, axis=0).astype(np.ushort)
+#        print("Projection stack combined by median.")
     _ob = ob_med - dc_med
     _proj = proj - dc_med
     proj_norm = np.true_divide(_proj, _ob, dtype=np.float32)
