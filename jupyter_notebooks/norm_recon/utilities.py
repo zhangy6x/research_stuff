@@ -314,4 +314,8 @@ def crop(stack, crop_left, crop_right, crop_top, crop_bottom, crop=True):
     	print("Not a image, no cropping is done")
     	new_stack = None
     return new_stack
+
+def log(history:dict, event:str, info):
+    history[event] = info
+    return history
         
