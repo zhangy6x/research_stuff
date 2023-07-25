@@ -85,17 +85,43 @@ def _init_arr_from_stack(fname, number_of_files, slc=None):
     """
     Initialize numpy array from files in a folder.
     """
-    _arr = dxchange.read_tiff(fname, slc)
+    if fname.split('.')[-1] == 'fits':
+        _arr = dxchange.read_fits(fname)
+        f_type = 'fits'
+    elif fname.split('.')[-1] in 'tiff':
+        _arr = dxchange.read_tiff(fname, slc)
+        f_type = 'tif'
+    else:
+        raise ValueError("'{}', only '.tif/.tiff' and '.fits' are supported.".format(fname))
     size = (number_of_files, _arr.shape[0], _arr.shape[1])
-    return np.empty(size, dtype=_arr.dtype)
+    return np.empty(size, dtype=_arr.dtype), f_type
 
 
 def read_tiff_stack(fdir, fname: list):
-    arr = _init_arr_from_stack(os.path.join(fdir, fname[0]), len(fname))
+    arr, f_type = _init_arr_from_stack(os.path.join(fdir, fname[0]), len(fname))
     for m, name in tqdm(enumerate(fname)):
         arr[m] = dxchange.read_tiff(os.path.join(fdir, name))
     return arr
 
+def read_img_stack(fdir, fname: list, fliplr=False, flipud=False):
+    arr, f_type = _init_arr_from_stack(os.path.join(fdir, fname[0]), len(fname))
+    if f_type == 'tif':
+        for m, name in tqdm(enumerate(fname)):
+            _arr = dxchange.read_tiff(os.path.join(fdir, name))
+            if fliplr:
+                _arr = np.fliplr(_arr)
+            if flipud:
+                _arr = np.flipud(_arr)
+            arr[m] = _arr
+    elif f_type == 'fits':
+        for m, name in tqdm(enumerate(fname)):
+            _arr = dxchange.read_fits(os.path.join(fdir, name))
+            if fliplr:
+                _arr = np.fliplr(_arr)
+            if flipud:
+                _arr = np.flipud(_arr)
+            arr[m] = _arr
+    return arr
 
 def find_proj180_ind(ang_list: list):
     dif = [abs(x - 180) for x in ang_list]
@@ -203,31 +229,31 @@ def load_dc(fdir, name="dc*"):
 
 ##########################
 
-def load_static(fdir, name="dc*", diff="20"):
-    if is_routine_ct(fdir):
-        dc_name, idx_list = get_name_and_idx(fdir)
-    else:
-        dc_list = glob.glob(fdir + "/" + name)
-        dc_name, idx_list = get_list(dc_list)
-    dc = read_tiff_stack(fdir=fdir, fname=dc_name)
-    if dc.shape[0] == 1:
-        dc_med = dc[:]
-        print("Only 1 file loaded.")
-    else:
-        dc = tomopy.misc.corr.remove_outlier(dc, diff)
-        dc_med = np.median(dc, axis=0).astype(np.ushort)
-    return dc_med
+# def load_static(fdir, name="dc*", diff="20"):
+#     if is_routine_ct(fdir):
+#         dc_name, idx_list = get_name_and_idx(fdir)
+#     else:
+#         dc_list = glob.glob(fdir + "/" + name)
+#         dc_name, idx_list = get_list(dc_list)
+#     dc = read_tiff_stack(fdir=fdir, fname=dc_name)
+#     if dc.shape[0] == 1:
+#         dc_med = dc[:]
+#         print("Only 1 file loaded.")
+#     else:
+#         dc = tomopy.misc.corr.remove_outlier(dc, diff)
+#         dc_med = np.median(dc, axis=0).astype(np.ushort)
+#     return dc_med
 
 
 ##########################
 
-def remove_ring(proj, algorithm="Vo"):
-    if algorithm == "Vo":
-        proj_rmv = tomopy.prep.stripe.remove_all_stripe(proj)
-    elif algorithm == "bm3d":
-        proj_norm = bm3d_rmv.extreme_streak_attenuation(proj)
-        proj_rmv = bm3d_rmv.multiscale_streak_removal(proj_norm)
-    return proj_rmv
+# def remove_ring(proj, algorithm="Vo"):
+#     if algorithm == "Vo":
+#         proj_rmv = tomopy.prep.stripe.remove_all_stripe(proj)
+#     elif algorithm == "bm3d":
+#         proj_norm = bm3d_rmv.extreme_streak_attenuation(proj)
+#         proj_rmv = bm3d_rmv.multiscale_streak_removal(proj_norm)
+#     return proj_rmv
 
 
 # def recon(proj, theta, rot_center, algorithm="gridrec"):
@@ -249,6 +275,17 @@ def remove_ring(proj, algorithm="Vo"):
 #     return recon
 
 ################################################ Added on 11/01/2022
+
+def filter_list(name_list:list, pattern=None):
+    if pattern is not None:
+        filtered_list = []
+        for _e in name_list:
+            if pattern in _e:
+                filtered_list.append(_e)
+    else:
+        filtered_list = name_list[:]
+    return filtered_list
+
 
 def add_idx_to_front(old: str, index_min=0):
     old_index = get_index_num(old)
