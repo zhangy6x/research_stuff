@@ -380,3 +380,26 @@ def crop(stack, crop_left, crop_right, crop_top, crop_bottom, crop=True):
 def log(history: dict, event: str, info):
     history[event] = info
     return history
+
+def composite_images(imgs, equalize=False, aggregator=np.mean):
+
+    if equalize:
+        imgs = [exposure.equalize_hist(img) for img in imgs]
+
+    imgs = [img / img.max() for img in imgs]
+
+    if len(imgs) < 3:
+        imgs += [np.zeros(shape=imgs[0].shape)] * (3-len(imgs))
+
+    imgs = np.dstack(imgs)
+
+    return imgs
+
+def overlay_images(imgs, equalize=False, aggregator=np.mean):
+
+    if equalize:
+        imgs = [exposure.equalize_hist(img) for img in imgs]
+
+    imgs = np.stack(imgs, axis=0)
+
+    return aggregator(imgs, axis=0)
