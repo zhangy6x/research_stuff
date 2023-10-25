@@ -403,3 +403,17 @@ def overlay_images(imgs, equalize=False, aggregator=np.mean):
     imgs = np.stack(imgs, axis=0)
 
     return aggregator(imgs, axis=0)
+
+def txm2tiff(path, fname, sub_dir):
+    fpath = os.path.join(path, fname)
+    print("Loading: {}".format(fpath))
+    data, metadata = dxchange.read_txrm(fpath)
+    save_to = os.path.join(path, sub_dir)
+    print("Saving to: {}".format(save_to))
+    dxchange.write_tiff_stack(data, fname=save_to + "/" + sub_dir, overwrite=True, digit=4)
+    return metadata
+################ change save path for your own
+# save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/autoreduce/rockit/" + sample_name# + "_vo"
+# save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/processed_data/rockit/" + sample_name + "_all"
+    
+    
