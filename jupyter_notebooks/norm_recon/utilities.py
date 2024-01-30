@@ -5,6 +5,7 @@ import pandas as pd
 import os
 import glob
 import tomopy
+import h5py as h5f
 # import svmbir
 from tqdm import tqdm
 import bm3d_streak_removal as bm3d_rmv
@@ -182,10 +183,12 @@ def get_name_and_idx(fdir):
 
 def load_ct(fdir, ang1=0, ang2=360, name="raw*"):
     if is_routine_ct(fdir):
+        print("Normal CT naming convention")
         ct_list = os.listdir(fdir)
         # ct_name, ang_deg, theta, idx_list = get_ind_list(ct_list)
         ct_name, ang_deg, ang_rad, idx_list = get_list_by_ang(ct_list)
     else:
+        print("Different CT naming convention")
         ct_list = glob.glob(fdir + "/" + name)
         ct_name, idx_list = get_list(ct_list)
         ang_rad = tomopy.angles(len(idx_list), ang1=ang1, ang2=ang2)  # Default 360 degree rotation
@@ -201,7 +204,34 @@ def load_ct(fdir, ang1=0, ang2=360, name="raw*"):
     return proj, ang_deg, ang_rad, proj180_ind[0], proj000_ind[0], ct_name
 
 
-def load_ob(fdir, name="ob*"):
+# def load_ob(fdir, name="ob*"):
+#     if is_routine_ct(fdir):
+#         ob_name, idx_list = get_name_and_idx(fdir)
+#         print("Normal CT naming convention")
+#     else:
+#         ob_list = glob.glob(fdir + "/" + name)
+#         ob_name, idx_list = get_list(ob_list)
+#         print("Different CT naming convention")
+#     print("Loading {} Open Beam (OB) images...".format(len(ob_name)))
+#     ob = read_tiff_stack(fdir=fdir, fname=ob_name)
+#     print("{} Open Beam (OB) images loaded!".format(len(ob_name)))
+#     print('Shape: {}'.format(ob.shape))
+#     return ob
+
+
+# def load_dc(fdir, name="dc*"):
+#     if is_routine_ct(fdir):
+#         dc_name, idx_list = get_name_and_idx(fdir)
+#     else:
+#         dc_list = glob.glob(fdir + "/" + name)
+#         dc_name, idx_list = get_list(dc_list)
+#     print("Loading {} Dark Current (DC) images...".format(len(dc_name)))
+#     dc = read_tiff_stack(fdir=fdir, fname=dc_name)
+#     print("{} Dark Current (DC) images loaded!".format(len(dc_name)))
+#     print('Shape: {}'.format(dc.shape))
+#     return dc
+
+def load_ob(fdir, name="OB*"):
     if is_routine_ct(fdir):
         ob_name, idx_list = get_name_and_idx(fdir)
     else:
@@ -214,7 +244,7 @@ def load_ob(fdir, name="ob*"):
     return ob
 
 
-def load_dc(fdir, name="dc*"):
+def load_dc(fdir, name="DC*"):
     if is_routine_ct(fdir):
         dc_name, idx_list = get_name_and_idx(fdir)
     else:
@@ -404,13 +434,59 @@ def overlay_images(imgs, equalize=False, aggregator=np.mean):
 
     return aggregator(imgs, axis=0)
 
-def txm2tiff(path, fname, sub_dir):
+def find_txrm(loc:str, incl_xrm=False):
+    fname_list = os.listdir(loc)
+    print("Pool:", fname_list)
+    txrm_list = []
+    for ename in fname_list:
+        if '.txrm' in ename:
+            txrm_list.append(ename)
+        if '.txm' in ename:
+            txrm_list.append(ename)
+        if incl_xrm:
+            if '.xrm' in ename:
+                txrm_list.append(ename)
+    txrm_list = sorted(txrm_list)
+    print("Found:", txrm_list)
+    return txrm_list
+
+def txm2tiff(path, fname):
+    if '_Drift.txrm' in fname:
+        name = 'drift'
+        h5_name = "metadata_drift.h5"
+        sub_dir = 'proj'
+    elif 'recon.txm' in fname:
+        name = 'recon'
+        h5_name = "metadata_recon.h5"
+        sub_dir = 'recon'
+    elif 'FrontScoutImage.xrm' in fname:
+        name = 'FrontScout'
+        h5_name = "metadata_FrontScout.h5"
+        sub_dir = 'proj'
+    elif 'SideScoutImage.xrm' in fname:
+        name = 'SideScout'
+        h5_name = "metadata_SideScout.h5"
+        sub_dir = 'proj'
+    elif 'reference_Side.xrm' in fname:
+        name = 'ref_Side'
+        h5_name = "metadata_reference_Side.h5"
+        sub_dir = 'proj'
+    else:
+        name = 'proj'
+        h5_name = "metadata_proj.h5"
+        sub_dir = 'proj'
     fpath = os.path.join(path, fname)
     print("Loading: {}".format(fpath))
     data, metadata = dxchange.read_txrm(fpath)
     save_to = os.path.join(path, sub_dir)
     print("Saving to: {}".format(save_to))
-    dxchange.write_tiff_stack(data, fname=save_to + "/" + sub_dir, overwrite=True, digit=4)
+    dxchange.write_tiff_stack(data, fname=save_to + "/" + name, overwrite=True, digit=4)
+    metadata_hdf5 = save_to + "/" + h5_name
+    if not os.path.exists(save_to):
+        os.mkdir(save_to)
+    with h5f.File(metadata_hdf5, mode='a') as f:
+        f.create_group('tomo/info')
+        f.create_dataset('tomo/info/metadata', data=(str(metadata),))
     return metadata
 ################ change save path for your own
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/autoreduce/rockit/" + sample_name# + "_vo"
