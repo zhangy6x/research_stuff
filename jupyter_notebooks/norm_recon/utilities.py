@@ -181,10 +181,12 @@ def get_name_and_idx(fdir):
     return fname, idx_list
 
 
-def load_ct(fdir, ang1=0, ang2=360, name="raw*"):
+def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None):
     if is_routine_ct(fdir):
         print("Normal CT naming convention")
         ct_list = os.listdir(fdir)
+        if filter_name is not None:
+            ct_list = filter_list(ct_list, filter_name)
         # ct_name, ang_deg, theta, idx_list = get_ind_list(ct_list)
         ct_name, ang_deg, ang_rad, idx_list = get_list_by_ang(ct_list)
     else:
