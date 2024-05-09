@@ -436,6 +436,13 @@ def overlay_images(imgs, equalize=False, aggregator=np.mean):
 
     return aggregator(imgs, axis=0)
 
+def remove_fnames(fname_list:list, to_rmv:list):
+    print(len(fname_list))
+    for each in to_rmv:
+        fname_list.remove(each)
+    print(len(fname_list))
+    return fname_list
+
 def find_txrm(loc:str, incl_xrm=False):
     fname_list = os.listdir(loc)
     print("Pool:", fname_list)
