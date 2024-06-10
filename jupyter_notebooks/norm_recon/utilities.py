@@ -413,6 +413,9 @@ def log(history: dict, event: str, info):
     history[event] = info
     return history
 
+def show_progress(current_iteration, end_iteration):
+    print(f"Registering {current_iteration} of {end_iteration} images")
+
 def composite_images(imgs, equalize=False, aggregator=np.mean):
 
     if equalize:
