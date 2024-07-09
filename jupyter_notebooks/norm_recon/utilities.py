@@ -9,9 +9,13 @@ import h5py as h5f
 # import svmbir
 from tqdm import tqdm
 import bm3d_streak_removal as bm3d_rmv
+from skimage.measure import block_reduce
 
 
 # slit_box_corners = np.array([[ None,  None], [ None, None], [None, None], [None,  None]])
+
+BM_eff = 7.59e-6
+BM_eff_wave = 1.8
 
 def get_deg(fname: str):
     _split = fname.split('_')
@@ -82,7 +86,7 @@ def get_list(name_list: list):
     return list(ind_dict_sorted.values()), ind
 
 
-def _init_arr_from_stack(fname, number_of_files, slc=None):
+def _init_arr_from_stack(fname, number_of_files, slc=None, bin_size=1):
     """
     Initialize numpy array from files in a folder.
     """
@@ -94,14 +98,19 @@ def _init_arr_from_stack(fname, number_of_files, slc=None):
         f_type = 'tif'
     else:
         raise ValueError("'{}', only '.tif/.tiff' and '.fits' are supported.".format(fname))
+    if bin_size > 1:
+        _arr = bin_pix(_arr, bin_size=bin_size)
     size = (number_of_files, _arr.shape[0], _arr.shape[1])
     return np.empty(size, dtype=_arr.dtype), f_type
 
 
-def read_tiff_stack(fdir, fname: list):
-    arr, f_type = _init_arr_from_stack(os.path.join(fdir, fname[0]), len(fname))
+def read_tiff_stack(fdir, fname: list, bin_size=1):
+    arr, f_type = _init_arr_from_stack(os.path.join(fdir, fname[0]), len(fname), bin_size=bin_size)
     for m, name in tqdm(enumerate(fname)):
-        arr[m] = dxchange.read_tiff(os.path.join(fdir, name))
+        _arr = dxchange.read_tiff(os.path.join(fdir, name))
+        if bin_size > 1:
+            _arr = bin_pix(_arr, bin_size=bin_size)
+        arr[m] = _arr[:]
     return arr
 
 def read_img_stack(fdir, fname: list, fliplr=False, flipud=False):
@@ -181,7 +190,7 @@ def get_name_and_idx(fdir):
     return fname, idx_list
 
 
-def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None):
+def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, bin_size=1):
     if is_routine_ct(fdir):
         print("Normal CT naming convention")
         ct_list = os.listdir(fdir)
@@ -200,7 +209,7 @@ def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None):
     print('Found index of 180 degree projections: {} of angle {}'.format(proj180_ind[0], proj180_ind[1]))
     print('Found index of 0 degree projections: {} of angle {}'.format(proj000_ind[0], proj000_ind[1]))
     print('Loading {} CT projections...'.format(len(ct_name)))
-    proj = read_tiff_stack(fdir=fdir, fname=ct_name)
+    proj = read_tiff_stack(fdir=fdir, fname=ct_name, bin_size=bin_size)
     print('{} CT projections loaded!'.format(len(ct_name)))
     print('Shape: {}'.format(proj.shape))
     return proj, ang_deg, ang_rad, proj180_ind[0], proj000_ind[0], ct_name
@@ -233,27 +242,27 @@ def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None):
 #     print('Shape: {}'.format(dc.shape))
 #     return dc
 
-def load_ob(fdir, name="OB*"):
+def load_ob(fdir, name="OB*", bin_size=1):
     if is_routine_ct(fdir):
         ob_name, idx_list = get_name_and_idx(fdir)
     else:
         ob_list = glob.glob(fdir + "/" + name)
         ob_name, idx_list = get_list(ob_list)
     print("Loading {} Open Beam (OB) images...".format(len(ob_name)))
-    ob = read_tiff_stack(fdir=fdir, fname=ob_name)
+    ob = read_tiff_stack(fdir=fdir, fname=ob_name, bin_size=bin_size)
     print("{} Open Beam (OB) images loaded!".format(len(ob_name)))
     print('Shape: {}'.format(ob.shape))
     return ob
 
 
-def load_dc(fdir, name="DC*"):
+def load_dc(fdir, name="DC*", bin_size=1):
     if is_routine_ct(fdir):
         dc_name, idx_list = get_name_and_idx(fdir)
     else:
         dc_list = glob.glob(fdir + "/" + name)
         dc_name, idx_list = get_list(dc_list)
     print("Loading {} Dark Current (DC) images...".format(len(dc_name)))
-    dc = read_tiff_stack(fdir=fdir, fname=dc_name)
+    dc = read_tiff_stack(fdir=fdir, fname=dc_name, bin_size=bin_size)
     print("{} Dark Current (DC) images loaded!".format(len(dc_name)))
     print('Shape: {}'.format(dc.shape))
     return dc
@@ -467,7 +476,7 @@ def txm2tiff(path, fname):
         name = 'drift'
         h5_name = "metadata_drift.h5"
         sub_dir = 'proj'
-    elif 'recon.txm' in fname:
+    elif '.txm' in fname:
         name = 'recon'
         h5_name = "metadata_recon.h5"
         sub_dir = 'recon'
@@ -500,6 +509,11 @@ def txm2tiff(path, fname):
         f.create_group('tomo/info')
         f.create_dataset('tomo/info/metadata', data=(str(metadata),))
     return metadata
+
+def bin_pix(img, bin_size=2, func=np.sum, dtype=np.uint16):
+    img_binned = block_reduce(img, block_size=(bin_size, bin_size), func=func, func_kwargs={'dtype': dtype})
+    return img_binned
+
 ################ change save path for your own
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/autoreduce/rockit/" + sample_name# + "_vo"
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/processed_data/rockit/" + sample_name + "_all"
