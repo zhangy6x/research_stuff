@@ -2,6 +2,7 @@ import math
 import dxchange
 import numpy as np
 import pandas as pd
+from scipy.signal import medfilt2d
 import os
 import glob
 import tomopy
@@ -513,6 +514,16 @@ def txm2tiff(path, fname):
 def bin_pix(img, bin_size=2, func=np.sum, dtype=np.uint16):
     img_binned = block_reduce(img, block_size=(bin_size, bin_size), func=func, func_kwargs={'dtype': dtype})
     return img_binned
+
+def estimate_noise_free_sinogram(sino_in: np.ndarray):
+    """
+    Estimate the noise-free sinogram from a noisy sinogram using BM3D.
+    """
+    min_org, max_org = np.min(sino_in), np.max(sino_in)
+    tmp = sino_in - np.median(sino_in, axis=0)
+    tmp = medfilt2d(tmp, kernel_size=3)
+    tmp = (tmp - np.min(tmp)) / (np.max(tmp) - np.min(tmp)) * (max_org - min_org) + min_org
+    return tmp
 
 ################ change save path for your own
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/autoreduce/rockit/" + sample_name# + "_vo"
