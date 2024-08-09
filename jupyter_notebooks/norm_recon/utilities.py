@@ -17,6 +17,10 @@ from skimage.measure import block_reduce
 
 BM_eff = 7.59e-6
 BM_eff_wave = 1.8
+pix_bin_size_default = 1
+pix_bin_func_default = np.sum
+pix_bin_dtype_default = np.uint16
+img_per_ang_default = 1
 
 def get_deg(fname: str):
     _split = fname.split('_')
@@ -87,7 +91,7 @@ def get_list(name_list: list):
     return list(ind_dict_sorted.values()), ind
 
 
-def _init_arr_from_stack(fname, number_of_files, slc=None, pixel_bin_size=1):
+def _init_arr_from_stack(fname, number_of_files, slc=None, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default):
     """
     Initialize numpy array from files in a folder.
     """
@@ -100,17 +104,18 @@ def _init_arr_from_stack(fname, number_of_files, slc=None, pixel_bin_size=1):
     else:
         raise ValueError("'{}', only '.tif/.tiff' and '.fits' are supported.".format(fname))
     if pixel_bin_size > 1:
-        _arr = bin_pix(_arr, pixel_bin_size=pixel_bin_size)
+        _arr = bin_pix(_arr, pixel_bin_size=pixel_bin_size, func=func, dtype=dtype)
     size = (number_of_files, _arr.shape[0], _arr.shape[1])
     return np.empty(size, dtype=_arr.dtype), f_type
 
 
-def read_tiff_stack(fdir, fname: list, pixel_bin_size=1):
-    arr, f_type = _init_arr_from_stack(os.path.join(fdir, fname[0]), len(fname), pixel_bin_size=pixel_bin_size)
+def read_tiff_stack(fdir, fname: list, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default):
+    arr, f_type = _init_arr_from_stack(os.path.join(fdir, fname[0]), len(fname), pixel_bin_size=pixel_bin_size, func=func, dtype=dtype)
     for m, name in tqdm(enumerate(fname)):
         _arr = dxchange.read_tiff(os.path.join(fdir, name))
         if pixel_bin_size > 1:
-            _arr = bin_pix(_arr, pixel_bin_size=pixel_bin_size)
+            _arr = tomopy.misc.corr.remove_outlier(_arr, 20).astype(np.ushort) # apply gamma filter before pixel bin
+            _arr = bin_pix(_arr, pixel_bin_size=pixel_bin_size, func=func, dtype=dtype)
         arr[m] = _arr[:]
     return arr
 
@@ -191,26 +196,42 @@ def get_name_and_idx(fdir):
     return fname, idx_list
 
 
-def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_size=1):
+def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default, img_per_ang=img_per_ang_default):
     if is_routine_ct(fdir):
         print("Normal CT naming convention")
         ct_list = os.listdir(fdir)
         if filter_name is not None:
             ct_list = filter_list(ct_list, filter_name)
         # ct_name, ang_deg, theta, idx_list = get_ind_list(ct_list)
+#         if img_per_ang >1:
+#             ct_list = ct_list[num_img_per_ang-1::num_img_per_ang]
         ct_name, ang_deg, ang_rad, idx_list = get_list_by_ang(ct_list)
+        img_per_ang = ang_deg.count(ang_deg[0])
     else:
-        print("Different CT naming convention")
+        print("Different CT naming convention, please verify 'img_per_ang = {}'".format(img_per_ang))
         ct_list = glob.glob(fdir + "/" + name)
         ct_name, idx_list = get_list(ct_list)
         ang_rad = tomopy.angles(len(idx_list), ang1=ang1, ang2=ang2)  # Default 360 degree rotation
         ang_deg = np.rad2deg(ang_rad)
+    proj = read_tiff_stack(fdir=fdir, fname=ct_name, pixel_bin_size=pixel_bin_size, func=func, dtype=dtype)
+    if img_per_ang > 1:
+        print("{} images per angle, image stack binning...".format(img_per_ang))
+        ct_name = ct_name[img_per_ang-1::img_per_ang]
+        ang_deg = ang_deg[img_per_ang-1::img_per_ang]
+        ang_rad = ang_rad[img_per_ang-1::img_per_ang]
+        idx_list = idx_list[img_per_ang-1::img_per_ang]
+        if img_per_ang < 3:
+            func_stack = np.mean
+            dtype_stack = np.float16
+        else:
+            func_stack = np.median
+            dtype_stack = np.uint16
+        proj = block_reduce(proj, block_size=(img_per_ang, 1, 1), func=func_stack)#, func_kwargs={'dtype': dtype_stack})
     proj180_ind = find_idx_by_ang(ang_deg, 180)
     proj000_ind = find_idx_by_ang(ang_deg, 0)
     print('Found index of 180 degree projections: {} of angle {}'.format(proj180_ind[0], proj180_ind[1]))
     print('Found index of 0 degree projections: {} of angle {}'.format(proj000_ind[0], proj000_ind[1]))
     print('Loading {} CT projections...'.format(len(ct_name)))
-    proj = read_tiff_stack(fdir=fdir, fname=ct_name, pixel_bin_size=pixel_bin_size)
     print('{} CT projections loaded!'.format(len(ct_name)))
     print('Shape: {}'.format(proj.shape))
     return proj, ang_deg, ang_rad, proj180_ind[0], proj000_ind[0], ct_name
@@ -243,27 +264,27 @@ def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_siz
 #     print('Shape: {}'.format(dc.shape))
 #     return dc
 
-def load_ob(fdir, name="OB*", pixel_bin_size=1):
+def load_ob(fdir, name="OB*", pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default):
     if is_routine_ct(fdir):
         ob_name, idx_list = get_name_and_idx(fdir)
     else:
         ob_list = glob.glob(fdir + "/" + name)
         ob_name, idx_list = get_list(ob_list)
     print("Loading {} Open Beam (OB) images...".format(len(ob_name)))
-    ob = read_tiff_stack(fdir=fdir, fname=ob_name, pixel_bin_size=pixel_bin_size)
+    ob = read_tiff_stack(fdir=fdir, fname=ob_name, pixel_bin_size=pixel_bin_size, func=func, dtype=dtype)
     print("{} Open Beam (OB) images loaded!".format(len(ob_name)))
     print('Shape: {}'.format(ob.shape))
     return ob
 
 
-def load_dc(fdir, name="DC*", pixel_bin_size=1):
+def load_dc(fdir, name="DC*", pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default):
     if is_routine_ct(fdir):
         dc_name, idx_list = get_name_and_idx(fdir)
     else:
         dc_list = glob.glob(fdir + "/" + name)
         dc_name, idx_list = get_list(dc_list)
     print("Loading {} Dark Current (DC) images...".format(len(dc_name)))
-    dc = read_tiff_stack(fdir=fdir, fname=dc_name, pixel_bin_size=pixel_bin_size)
+    dc = read_tiff_stack(fdir=fdir, fname=dc_name, pixel_bin_size=pixel_bin_size, func=func, dtype=dtype)
     print("{} Dark Current (DC) images loaded!".format(len(dc_name)))
     print('Shape: {}'.format(dc.shape))
     return dc
@@ -511,9 +532,17 @@ def txm2tiff(path, fname):
         f.create_dataset('tomo/info/metadata', data=(str(metadata),))
     return metadata
 
-def bin_pix(img, pixel_bin_size=2, func=np.sum, dtype=np.uint16):
-    img_binned = block_reduce(img, block_size=(pixel_bin_size, pixel_bin_size), func=func, func_kwargs={'dtype': dtype})
-    return img_binned
+def bin_pix(img, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default):
+    if pixel_bin_size > 1:
+        if len(img.shape) == 2:
+            _block_size = (pixel_bin_size, pixel_bin_size)
+        elif len(img.shape) == 3:
+            _block_size = (1, pixel_bin_size, pixel_bin_size)
+        img_binned = block_reduce(img, block_size=_block_size, func=func, func_kwargs={'dtype': dtype})
+        return img_binned
+    else:
+        print("Pixel_bin_size = 1, no binning")
+        return img
 
 def estimate_noise_free_sinogram(sino_in: np.ndarray):
     """
