@@ -389,7 +389,33 @@ def remove_last_str(fname: str):
 def normalize(proj, ob, dc):
     assert len(proj.shape) <= 3
     assert len(ob.shape) <= 3
-    assert len(dc.shape) <= 3
+    if dc is not None:
+        assert len(dc.shape) <= 3
+    proj_mi_dc, ob_mi_dc, dc_med = subtract_dc(proj, ob, dc)
+    proj_norm = np.true_divide(proj_mi_dc, ob_mi_dc, dtype=np.float32)
+    print("Normalization Done!")
+    return proj_norm, proj_mi_dc, ob_mi_dc, dc_med
+
+# def normalize_no_dc(proj, ob):
+#     assert len(proj.shape) <= 3
+#     assert len(ob.shape) <= 3
+#     if len(ob.shape) == 2:
+#         ob_med = ob[:]
+#         print("Only 1 OB loaded.")
+#     elif len(ob.shape) == 3:
+#         if ob.shape[0] == 1:
+#             ob_med = np.squeeze(ob, axis=0)
+#             print("OB squeezed.")
+#             print("Only 1 OB loaded.")
+#         else:
+#             ob_med = np.median(ob, axis=0).astype(np.ushort)
+#             print("OB stack combined by median.")
+#     print("Normalizing...")
+#     proj_norm = np.true_divide(proj, ob_med, dtype=np.float32)
+#     print("Normalization Done!")
+#     return proj_norm, ob_med
+
+def subtract_dc(proj, ob, dc):
     if len(ob.shape) == 2:
         ob_med = ob[:]
         print("Only 1 OB loaded.")
@@ -401,29 +427,26 @@ def normalize(proj, ob, dc):
         else:
             ob_med = np.median(ob, axis=0).astype(np.ushort)
             print("OB stack combined by median.")
-    if len(dc.shape) == 2:
-        dc_med = dc[:]
-        print("Only 1 DC loaded.")
-    elif len(dc.shape) == 3:
-        if dc.shape[0] == 1:
-            dc_med = np.squeeze(dc, axis=0)
-            print("DC squeezed.")
+    if dc is not None:
+        if len(dc.shape) == 2:
+            dc_med = dc[:]
             print("Only 1 DC loaded.")
-        else:
-            dc_med = np.median(dc, axis=0).astype(np.ushort)
-            print("DC stack combined by median.")
-    print("Normalizing...")
-    #    if len(proj.shape) == 2:
-    #        proj = proj[:]
-    #    elif len(proj.shape) == 3:
-    #        proj = np.median(proj, axis=0).astype(np.ushort)
-    #        print("Projection stack combined by median.")
-    _ob = ob_med - dc_med
-    _proj = proj - dc_med
-    proj_norm = np.true_divide(_proj, _ob, dtype=np.float32)
-    print("Normalization Done!")
-    return proj_norm, ob_med, dc_med
-
+        elif len(dc.shape) == 3:
+            if dc.shape[0] == 1:
+                dc_med = np.squeeze(dc, axis=0)
+                print("DC squeezed.")
+                print("Only 1 DC loaded.")
+            else:
+                dc_med = np.median(dc, axis=0).astype(np.ushort)
+                print("DC stack combined by median.")
+        ob_out = ob_med - dc_med
+        proj_out = proj - dc_med
+        dc_out = dc_med[:]
+    else:
+        ob_out = ob_med[:]
+        proj_out = proj[:]
+        dc_out = None
+    return proj_out, ob_out, dc_out
 
 def crop(stack, crop_left, crop_right, crop_top, crop_bottom, crop=True):
     if len(stack.shape) == 3:
