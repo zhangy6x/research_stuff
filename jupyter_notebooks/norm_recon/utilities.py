@@ -198,8 +198,8 @@ def get_name_and_idx(fdir):
     return fname, idx_list
 
 
-def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default, img_per_ang=img_per_ang_default):
-    if is_routine_ct(fdir):
+def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default, img_per_ang=img_per_ang_default, mars_ct=True):
+    if mars_ct:
         print("Normal CT naming convention")
         ct_list = os.listdir(fdir)
         if filter_name is not None:
@@ -395,25 +395,6 @@ def normalize(proj, ob, dc):
     proj_norm = np.true_divide(proj_mi_dc, ob_mi_dc, dtype=np.float32)
     print("Normalization Done!")
     return proj_norm, proj_mi_dc, ob_mi_dc, dc_med
-
-# def normalize_no_dc(proj, ob):
-#     assert len(proj.shape) <= 3
-#     assert len(ob.shape) <= 3
-#     if len(ob.shape) == 2:
-#         ob_med = ob[:]
-#         print("Only 1 OB loaded.")
-#     elif len(ob.shape) == 3:
-#         if ob.shape[0] == 1:
-#             ob_med = np.squeeze(ob, axis=0)
-#             print("OB squeezed.")
-#             print("Only 1 OB loaded.")
-#         else:
-#             ob_med = np.median(ob, axis=0).astype(np.ushort)
-#             print("OB stack combined by median.")
-#     print("Normalizing...")
-#     proj_norm = np.true_divide(proj, ob_med, dtype=np.float32)
-#     print("Normalization Done!")
-#     return proj_norm, ob_med
 
 def subtract_dc(proj, ob, dc):
     if len(ob.shape) == 2:
