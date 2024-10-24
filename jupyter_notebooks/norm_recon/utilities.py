@@ -53,6 +53,36 @@ def get_fname_df(name_list: list, golden_ratio=False):
     fname_df['idx'] = ind
     return fname_df
 
+def group_fname_df(name_list: list):
+    ind = []
+    sample = []
+    position = []
+    fname_df = pd.DataFrame()
+    for e_name in name_list:
+        _split = e_name.split('_')
+        _index_tiff = _split[-1]
+        _index = _index_tiff.split('.')[0]
+        _sample = _split[0] + '_' + _split[1]
+        _position = _split[2]
+        index = int(_index)
+        ind.append(index)
+        sample.append(_sample)
+        position.append(_position)
+    fname_df['fname'] = name_list
+    fname_df['sample'] = sample
+    fname_df['position'] = position
+    fname_df['idx'] = ind
+    return fname_df
+
+
+def get_exposure_list(name_list: list):
+    exposure = []
+    for e_name in name_list:
+        _split = e_name.split('_')
+        
+        _exposure = '_' + _split[-2] + '_'
+        exposure.append(_exposure)
+    return sorted(list(set(exposure)))
 
 def get_list_by_idx(name_list: list, golden_ratio=False):
     fname_df = get_fname_df(name_list, golden_ratio)
@@ -579,9 +609,12 @@ def remove_ring(proj_mlog, ring_algo, ncore=None):
         proj_mlog_bm3d = extreme_streak_attenuation(proj_mlog)
         print("Remove sinogram (after log transform) streak noise using multi-scale BM3D-based denoising procedure.")
         proj_mlog_rmv = multiscale_streak_removal(proj_mlog_bm3d)
-
+    
     #if ring_algo == 'bm3dornl':
     #    sino_mlog_rmv = bm3d_ring_artifact_removal(sino_mlog_tilt[slice_num])
+    
+    if ring_algo is None:
+        proj_mlog_rmv = proj_mlog[:]
     return proj_mlog_rmv
 
 def remove_by_idx(idx_list:list, proj_raw, ang_deg, ang_rad, fname_sorted):
