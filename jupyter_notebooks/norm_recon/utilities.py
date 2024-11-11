@@ -3,6 +3,8 @@ import dxchange
 import numpy as np
 import pandas as pd
 from scipy.signal import medfilt2d
+import matplotlib.pyplot as plt
+import cv2 as cv
 import os
 import glob
 import tomopy
@@ -12,6 +14,7 @@ from tqdm import tqdm
 import bm3d_streak_removal as bm3d
 from bm3d_streak_removal_cuda import multiscale_streak_removal, normalize_data, extreme_streak_attenuation, default_horizontal_bins, full_streak_pipeline
 from skimage.measure import block_reduce
+from PIL import Image
 
 
 # slit_box_corners = np.array([[ None,  None], [ None, None], [None, None], [None,  None]])
@@ -53,10 +56,11 @@ def get_fname_df(name_list: list, golden_ratio=False):
     fname_df['idx'] = ind
     return fname_df
 
-def group_fname_df(name_list: list):
+def group_fname_df(name_list: list, scan_dir:str):
     ind = []
     sample = []
     position = []
+    fpath_list = []
     fname_df = pd.DataFrame()
     for e_name in name_list:
         _split = e_name.split('_')
@@ -64,25 +68,35 @@ def group_fname_df(name_list: list):
         _index = _index_tiff.split('.')[0]
         _sample = _split[0] + '_' + _split[1]
         _position = _split[2]
+        _fpath = os.path.join(scan_dir, e_name)
         index = int(_index)
         ind.append(index)
         sample.append(_sample)
         position.append(_position)
+        fpath_list.append(_fpath)
     fname_df['fname'] = name_list
     fname_df['sample'] = sample
     fname_df['position'] = position
     fname_df['idx'] = ind
+    fname_df['fpath'] = fpath_list
     return fname_df
 
 
-def get_exposure_list(name_list: list):
+def get_exposure_list(fname_list: list):
     exposure = []
-    for e_name in name_list:
+    for e_name in fname_list:
         _split = e_name.split('_')
-        
         _exposure = '_' + _split[-2] + '_'
         exposure.append(_exposure)
     return sorted(list(set(exposure)))
+
+def get_name_list(fname_list: list):
+    name = []
+    for e_name in fname_list:
+        _split = e_name.split('_')
+        _name = '_'.join(_split[0:-2])
+        name.append(_name)
+    return sorted(list(set(name)))
 
 def get_list_by_idx(name_list: list, golden_ratio=False):
     fname_df = get_fname_df(name_list, golden_ratio)
@@ -143,7 +157,17 @@ def _init_arr_from_stack(fname, number_of_files, slc=None, pixel_bin_size=pix_bi
 def read_tiff_stack(fdir, fname: list, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default):
     arr, f_type = _init_arr_from_stack(os.path.join(fdir, fname[0]), len(fname), pixel_bin_size=pixel_bin_size, func=func, dtype=dtype)
     print(len(fname))
-    for m, name in tqdm(enumerate(fname)):
+    for m, name in tqdm(enumerate(fname), leave=False):
+        _arr = dxchange.read_tiff(os.path.join(fdir, name))
+        if pixel_bin_size > 1:
+            _arr = tomopy.misc.corr.remove_outlier(_arr, 20).astype(np.ushort) # apply gamma filter before pixel bin
+            _arr = bin_pix(_arr, pixel_bin_size=pixel_bin_size, func=func, dtype=dtype)
+        arr[m] = _arr[:]
+    return arr
+
+def read_tiff_stack_wo_tqdm(fdir, fname: list, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default):
+    arr, f_type = _init_arr_from_stack(os.path.join(fdir, fname[0]), len(fname), pixel_bin_size=pixel_bin_size, func=func, dtype=dtype)
+    for m, name in enumerate(fname):
         _arr = dxchange.read_tiff(os.path.join(fdir, name))
         if pixel_bin_size > 1:
             _arr = tomopy.misc.corr.remove_outlier(_arr, 20).astype(np.ushort) # apply gamma filter before pixel bin
@@ -170,6 +194,36 @@ def read_img_stack(fdir, fname: list, fliplr=False, flipud=False):
                 _arr = np.flipud(_arr)
             arr[m] = _arr
     return arr
+
+def load_tiff(file_name):
+    """load tiff image
+    Parameters:
+    -----------
+       full file name of tiff image
+    """
+    try:
+        _image = Image.open(file_name)
+        metadata = dict(_image.tag_v2)
+        data = np.asarray(_image)
+        _image.close()
+        return [data, metadata]
+    except OSError as e:
+        raise OSError(f"Unable to read the TIFF file provided!: {e}")
+
+def make_tiff(data=[], metadata=[], file_name=""):
+    """create tiff file"""
+    new_image = Image.fromarray(data)
+    new_image.save(file_name, tiffinfo=metadata)
+
+def restore_metadata(src_fname, tgt_fname):
+    _src = load_tiff(src_fname)
+    _src_metadata = _src[1]
+    _tgt = load_tiff(tgt_fname)
+    _tgt_data = _tgt[0]
+    make_tiff(data=_tgt_data, metadata=_src_metadata, file_name=tgt_fname)
+
+# def restore_metadata_dir(src_dir, tgt_dir):
+    
 
 def find_proj180_ind(ang_list: list):
     dif = [abs(x - 180) for x in ang_list]
@@ -639,6 +693,17 @@ def remove_zinger(sino_mlog):
         _sino_mlog_clean = rem.remove_zinger(z_mlog, 0.005, size=2)
         sino_mlog[z_idx] = _sino_mlog_clean
     return sino_mlog
+
+def plot_image(img, figsize_in_inches=(5,5)):
+    fig, ax = plt.subplots(figsize=figsize_in_inches)
+    ax.imshow(cv.cvtColor(img, cv.COLOR_BGR2RGB))
+    plt.show()
+    
+def plot_images(imgs, figsize_in_inches=(5,5)):
+    fig, axs = plt.subplots(1, len(imgs), figsize=figsize_in_inches)
+    for col, img in enumerate(imgs):
+        axs[col].imshow(cv.cvtColor(img, cv.COLOR_BGR2RGB))
+    plt.show()
 
 ################ change save path for your own
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/autoreduce/rockit/" + sample_name# + "_vo"
