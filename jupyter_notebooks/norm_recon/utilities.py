@@ -8,6 +8,7 @@ import cv2 as cv
 import os
 import glob
 import tomopy
+import random
 import h5py as h5f
 # import svmbir
 from tqdm import tqdm
@@ -705,6 +706,24 @@ def plot_images(imgs, figsize_in_inches=(5,5)):
         axs[col].imshow(cv.cvtColor(img, cv.COLOR_BGR2RGB))
     plt.show()
 
+def plot_imgs_from_stack(img_stack, idx_list, vmin=0.8, vmax=1.2, fig_per_row=4, figsize=(20,20)):
+    num_of_row = int(len(idx_list)/fig_per_row)
+    if len(idx_list)%fig_per_row != 0:
+        num_of_row = num_of_row + 1
+    f, ax = plt.subplots(num_of_row, fig_per_row, figsize=figsize)
+    for m, ea in enumerate(idx_list):
+        _loc = int(m/fig_per_row)
+        ax[_loc][m-(_loc*fig_per_row)].imshow(img_stack[ea], vmin=vmin, vmax=vmax)
+        ax[_loc][m-(_loc*fig_per_row)].set_title('Index={}'.format(ea))
+
+def generate_randint_list(num_of_ele, range_min, range_max):
+    # Create an empty list
+    _list = []
+    # Generate 10 random numbers between 0 and 200
+    for _ in range(num_of_ele):
+        _list.append(random.randint(range_min, range_max))
+    _list.sort()
+    return _list
 ################ change save path for your own
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/autoreduce/rockit/" + sample_name# + "_vo"
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/processed_data/rockit/" + sample_name + "_all"
