@@ -16,7 +16,7 @@ import bm3d_streak_removal as bm3d
 from bm3d_streak_removal_cuda import multiscale_streak_removal, normalize_data, extreme_streak_attenuation, default_horizontal_bins, full_streak_pipeline
 from skimage.measure import block_reduce
 from PIL import Image
-
+import timeit
 
 # slit_box_corners = np.array([[ None,  None], [ None, None], [None, None], [None,  None]])
 
@@ -671,6 +671,24 @@ def remove_ring(proj_mlog, ring_algo, ncore=None):
     if ring_algo is None:
         proj_mlog_rmv = proj_mlog[:]
     return proj_mlog_rmv
+
+def remove_nan(array, val, ncore):
+    if np.isnan(array).any():
+        print("Found NaN")
+        t0 = timeit.default_timer()
+        array = tomopy.misc.corr.remove_nan(array, val=val, ncore=ncore)
+        t1 = timeit.default_timer()
+        print("Remove NaN Time: {} s".format(t1-t0))
+    return array
+
+def remove_neg(array, val, ncore):
+    if array.any() < 0:
+        print("Found Negtives")
+        t0 = timeit.default_timer()
+        array = tomopy.misc.corr.remove_neg(array, val=val, ncore=ncore)
+        t1 = timeit.default_timer()
+        print("Remove Negatives Time: {} s".format(t1-t0))
+    return array
 
 def remove_by_idx(idx_list:list, proj_raw, ang_deg, ang_rad, fname_sorted):
     for ea_idx in tqdm(idx_list):
