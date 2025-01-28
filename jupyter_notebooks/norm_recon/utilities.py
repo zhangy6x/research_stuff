@@ -283,7 +283,7 @@ def get_name_and_idx(fdir):
     return fname, idx_list
 
 
-def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default, img_per_ang=img_per_ang_default, mars_ct=True):
+def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default, img_per_ang=img_per_ang_default, mars_ct=True, golden_ratio=False):
     if mars_ct:
         print("Normal CT naming convention")
         ct_list = os.listdir(fdir)
@@ -292,7 +292,7 @@ def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_siz
         # ct_name, ang_deg, theta, idx_list = get_ind_list(ct_list)
 #         if img_per_ang >1:
 #             ct_list = ct_list[num_img_per_ang-1::num_img_per_ang]
-        ct_name, ang_deg, ang_rad, idx_list = get_list_by_ang(ct_list)
+        ct_name, ang_deg, ang_rad, idx_list = get_list_by_ang(ct_list, golden_ratio)
         img_per_ang = ang_deg.count(ang_deg[0])
     else:
         print("Different CT naming convention, please verify 'img_per_ang = {}'".format(img_per_ang))
