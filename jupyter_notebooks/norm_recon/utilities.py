@@ -17,6 +17,7 @@ from bm3d_streak_removal_cuda import multiscale_streak_removal, normalize_data, 
 from skimage.measure import block_reduce
 from PIL import Image
 import timeit
+import algotom.rec.reconstruction as rec
 
 # slit_box_corners = np.array([[ None,  None], [ None, None], [None, None], [None,  None]])
 
@@ -742,6 +743,149 @@ def generate_randint_list(num_of_ele, range_min, range_max):
         _list.append(random.randint(range_min, range_max))
     _list.sort()
     return _list
+
+def recon_full_volume(proj_mlog_to_recon, rot_center, ang_rad, start_ang_idx, end_ang_idx, recon_algo, ncore, svmbir_path, pix_um=None, num_iter=100, apply_log=False):
+    t0 = timeit.default_timer()
+    ####################### tomopy algorithms (gridrec and fbp are faster than algotom) ##########################
+    if recon_algo in ['art', 'bart', 'fbp', 'gridrec',
+                      'mlem', 'osem', 'ospml_hybrid', 'ospml_quad',
+                      'pml_hybrid', 'pml_quad', 'sirt', 'tv', 'grad', 'tikh']:
+        recon = tomopy.recon(proj_mlog_to_recon[start_ang_idx:end_ang_idx,:,:], ang_rad[start_ang_idx:end_ang_idx], center=rot_center,
+                             algorithm=recon_algo,
+                             ncore=ncore, 
+    #                          nchunk=nchunk
+                            )
+    ################################################ algotom algorithms ##########################################
+        #### ASTRA
+    if recon_algo in ['FBP', 'SIRT', 'SART', 'ART', 'CGLS', 'FBP_CUDA', 'SIRT_CUDA', 'SART_CUDA', 'CGLS_CUDA']:
+        recon = rec.astra_reconstruction(proj_mlog_to_recon[start_ang_idx:end_ang_idx,:,:], 
+                                         rot_center, 
+                                         angles=ang_rad[start_ang_idx:end_ang_idx],
+                                         apply_log=apply_log,
+                                         method=recon_algo,
+                                         ratio=1.0,
+                                         filter_name='hann',
+                                         pad=None,
+                                         num_iter=num_iter,
+                                         ncore=ncore
+                                        )
+        recon = np.moveaxis(recon, 1, 0) 
+        #### gridrec from algotom
+    if recon_algo == 'gridrec_algo':
+        recon = rec.gridrec_reconstruction(proj_mlog_to_recon[start_ang_idx:end_ang_idx,:,:],
+                                           rot_center, 
+                                           angles=ang_rad[start_ang_idx:end_ang_idx], 
+                                           apply_log=apply_log,
+                                           ratio=1.0,
+                                           filter_name='shepp',
+                                           pad=100,
+                                           ncore=ncore
+                                          )
+        recon = np.moveaxis(recon, 1, 0)
+        #### FBP from algotom
+    if recon_algo == 'fbp_algo':
+        recon = rec.fbp_reconstruction(proj_mlog_to_recon[start_ang_idx:end_ang_idx,:,:], 
+                                       rot_center, 
+                                       angles=ang_rad[start_ang_idx:end_ang_idx], 
+                                       apply_log=apply_log,
+                                       ramp_win=None,
+                                       filter_name='hann',
+                                       pad=None,
+                                       pad_mode='edge',
+                                       ncore=ncore,
+                                       gpu=False,
+    #                                   gpu=True, block=(16, 16), # Version error 7.8, current version 7.5
+                                      )
+        recon = np.moveaxis(recon, 1, 0)
+    ################################################### MBIR #####################################################
+    if recon_algo == 'svmbir':
+        T = 2.0
+        p = 1.2
+        sharpness = 0.0
+        snr_db = 30.0
+        center_offset= -(proj_mlog_to_recon.shape[2]/2 - rot_center)
+        recon = svmbir.recon(
+            proj_mlog_to_recon[start_ang_idx:end_ang_idx,:,:],
+            angles=np.array(ang_rad)[start_ang_idx:end_ang_idx], # In radians
+            weight_type='transmission', 
+            center_offset=center_offset, 
+            snr_db=snr_db, p=p, T=T, sharpness=sharpness, 
+            positivity=False,
+            max_iterations=num_iter,
+            num_threads= 112,
+            verbose=1,# verbose: display of reconstruction: 0 is minimum, 1 is regular
+            svmbir_lib_path = svmbir_path,
+        )
+        recon = np.fliplr(np.rot90(recon, k=1, axes=(1,2)))
+    ##################################
+    if pix_um is not None:
+        pix_cm = pix_um/10000
+        recon = recon/pix_cm
+    t1 = timeit.default_timer()
+    print("Time cost {} min".format((t1-t0)/60))
+    return recon
+
+def recon_slice_by_slice(sino_mlog_to_recon, proj_mlog_to_recon, rot_center, ang_rad, start_ang_idx, end_ang_idx, recon_algo, ncore, svmbir_path, save_to, recon_crop=False, recon_crop_roi_dict=None, pix_um=None, num_iter=100, apply_log=False):
+    # Only run this cell if the previous one failed. This cell will recon and save slice by slice
+    print('Slice by slice saving to: {}'.format(save_to))
+    t0 = timeit.default_timer()
+    for h_idx in tqdm(range(sino_mlog_to_recon.shape[0])):
+        _rec_slice = recon_a_slice(sino_mlog_to_recon, proj_mlog_to_recon, h_idx, rot_center, ang_rad, start_ang_idx, end_ang_idx, recon_algo, ncore, svmbir_path, num_iter, apply_log)
+        _rec_slice = crop(_rec_slice, recon_crop_roi_dict['left'], recon_crop_roi_dict['right'], recon_crop_roi_dict['top'], recon_crop_roi_dict['bottom'], recon_crop)
+        if pix_um is not None:
+            pix_cm = pix_um/10000
+            _rec_slice = _rec_slice/pix_cm
+        _slice_name = save_to + "/recon_" + f'{h_idx:05d}'
+        dxchange.write_tiff(_rec_slice, fname=_slice_name, overwrite=True)
+    t1 = timeit.default_timer()
+    print("Time cost {} min".format((t1-t0)/60))
+
+def recon_a_slice(sino_mlog_to_recon, proj_mlog_to_recon, h_idx, rot_center, ang_rad, start_ang_idx, end_ang_idx, recon_algo, ncore, svmbir_path, num_iter=100, apply_log=False):
+    if recon_algo == 'gridrec':
+        _rec_slice = rec.gridrec_reconstruction(sino_mlog_to_recon[h_idx,start_ang_idx:end_ang_idx,:], rot_center, angles=ang_rad[start_ang_idx:end_ang_idx], apply_log=apply_log,
+                                                ncore=ncore,
+                                                ratio=1.0,
+                                                filter_name='shepp',
+                                                pad=100,
+                                               )
+    if recon_algo == 'fbp':
+        _rec_slice = rec.fbp_reconstruction(sino_mlog_to_recon[h_idx,start_ang_idx:end_ang_idx,:], rot_center, angles=ang_rad[start_ang_idx:end_ang_idx], apply_log=apply_log,
+                                            ncore=ncore,
+                                            ramp_win=None,
+                                            filter_name='hann',
+                                            pad=None,
+                                            pad_mode='edge',
+                                            gpu=False,
+                                            # gpu=True, block=(16, 16), # Version error 7.8, current version 7.5
+                                           )
+    if recon_algo in ['FBP', 'SIRT', 'SART', 'ART', 'CGLS', 'FBP_CUDA', 'SIRT_CUDA', 'SART_CUDA', 'CGLS_CUDA']:
+        _rec_slice = rec.astra_reconstruction(sino_mlog_to_recon[h_idx,start_ang_idx:end_ang_idx,:], rot_center, angles=ang_rad[start_ang_idx:end_ang_idx], apply_log=apply_log,
+                                              method=recon_algo,
+                                              num_iter=num_iter,
+                                              ncore=ncore,
+                                              ratio=1.0,
+                                              filter_name='hann',
+                                              pad=None,
+                                             )
+    if recon_algo == 'svmbir':
+        T = 2.0
+        p = 1.2
+        sharpness = 0.0
+        snr_db = 30.0
+        center_offset= -(proj_mlog_to_recon.shape[2]/2 - rot_center)
+        _rec_mbir = svmbir.recon(proj_mlog_to_recon[start_ang_idx:end_ang_idx,h_idx,:],
+                                  angles=np.array(ang_rad)[start_ang_idx:end_ang_idx], # In radians
+                                  weight_type='transmission', 
+                                  center_offset=center_offset, 
+                                  snr_db=snr_db, p=p, T=T, sharpness=sharpness, 
+                                  positivity=False,
+                                  max_iterations=num_iter,
+                                  num_threads= 112,
+                                  verbose=1,# verbose: display of reconstruction: 0 is minimum, 1 is regular
+                                  svmbir_lib_path = svmbir_path
+                                 )
+        _rec_slice = np.flipud(np.rot90(_rec_mbir[0]))
+    return _rec_slice
 ################ change save path for your own
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/autoreduce/rockit/" + sample_name# + "_vo"
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/processed_data/rockit/" + sample_name + "_all"
