@@ -825,12 +825,14 @@ def recon_full_volume(proj_mlog_to_recon, rot_center, ang_rad, start_ang_idx, en
     print("Time cost {} min".format((t1-t0)/60))
     return recon
 
-def recon_slice_by_slice(sino_mlog_to_recon, proj_mlog_to_recon, rot_center, ang_rad, start_ang_idx, end_ang_idx, recon_algo, ncore, svmbir_path, save_to, recon_crop=False, recon_crop_roi_dict=None, pix_um=None, num_iter=100, apply_log=False):
+def recon_slice_by_slice(sino_to_recon, proj_mlog_to_recon, rot_center, ang_rad, start_ang_idx, end_ang_idx, recon_algo, ncore, svmbir_path, save_to, apply_log,
+                         recon_crop=False, recon_crop_roi_dict=None, pix_um=None, num_iter=100):
     # Only run this cell if the previous one failed. This cell will recon and save slice by slice
     print('Slice by slice saving to: {}'.format(save_to))
     t0 = timeit.default_timer()
     for h_idx in tqdm(range(sino_mlog_to_recon.shape[0])):
-        _rec_slice = recon_a_slice(sino_mlog_to_recon, proj_mlog_to_recon, h_idx, rot_center, ang_rad, start_ang_idx, end_ang_idx, recon_algo, ncore, svmbir_path, num_iter, apply_log)
+        _rec_slice = recon_a_slice(sino_to_recon[h_idx,start_ang_idx:end_ang_idx,:], proj_mlog_to_recon[start_ang_idx:end_ang_idx,h_idx,:], 
+                                   rot_center, ang_rad[start_ang_idx:end_ang_idx], recon_algo, ncore, svmbir_path, num_iter=num_iter, apply_log=apply_log)
         _rec_slice = crop(_rec_slice, recon_crop_roi_dict['left'], recon_crop_roi_dict['right'], recon_crop_roi_dict['top'], recon_crop_roi_dict['bottom'], recon_crop)
         if pix_um is not None:
             pix_cm = pix_um/10000
@@ -840,16 +842,16 @@ def recon_slice_by_slice(sino_mlog_to_recon, proj_mlog_to_recon, rot_center, ang
     t1 = timeit.default_timer()
     print("Time cost {} min".format((t1-t0)/60))
 
-def recon_a_slice(sino_mlog_to_recon, proj_mlog_to_recon, h_idx, rot_center, ang_rad, start_ang_idx, end_ang_idx, recon_algo, ncore, svmbir_path, num_iter=100, apply_log=False):
+def recon_a_slice(sino_to_recon, proj_mlog_to_recon, rot_center, ang_rad, recon_algo, ncore, svmbir_path, apply_log, num_iter=100):
     if recon_algo == 'gridrec':
-        _rec_slice = rec.gridrec_reconstruction(sino_mlog_to_recon[h_idx,start_ang_idx:end_ang_idx,:], rot_center, angles=ang_rad[start_ang_idx:end_ang_idx], apply_log=apply_log,
+        _rec_slice = rec.gridrec_reconstruction(sino_to_recon, rot_center, angles=ang_rad, apply_log=apply_log,
                                                 ncore=ncore,
                                                 ratio=1.0,
                                                 filter_name='shepp',
                                                 pad=100,
                                                )
     if recon_algo == 'fbp':
-        _rec_slice = rec.fbp_reconstruction(sino_mlog_to_recon[h_idx,start_ang_idx:end_ang_idx,:], rot_center, angles=ang_rad[start_ang_idx:end_ang_idx], apply_log=apply_log,
+        _rec_slice = rec.fbp_reconstruction(sino_to_recon, rot_center, angles=ang_rad, apply_log=apply_log,
                                             ncore=ncore,
                                             ramp_win=None,
                                             filter_name='hann',
@@ -859,7 +861,7 @@ def recon_a_slice(sino_mlog_to_recon, proj_mlog_to_recon, h_idx, rot_center, ang
                                             # gpu=True, block=(16, 16), # Version error 7.8, current version 7.5
                                            )
     if recon_algo in ['FBP', 'SIRT', 'SART', 'ART', 'CGLS', 'FBP_CUDA', 'SIRT_CUDA', 'SART_CUDA', 'CGLS_CUDA']:
-        _rec_slice = rec.astra_reconstruction(sino_mlog_to_recon[h_idx,start_ang_idx:end_ang_idx,:], rot_center, angles=ang_rad[start_ang_idx:end_ang_idx], apply_log=apply_log,
+        _rec_slice = rec.astra_reconstruction(sino_to_recon, rot_center, angles=ang_rad, apply_log=apply_log,
                                               method=recon_algo,
                                               num_iter=num_iter,
                                               ncore=ncore,
@@ -873,8 +875,8 @@ def recon_a_slice(sino_mlog_to_recon, proj_mlog_to_recon, h_idx, rot_center, ang
         sharpness = 0.0
         snr_db = 30.0
         center_offset= -(proj_mlog_to_recon.shape[2]/2 - rot_center)
-        _rec_mbir = svmbir.recon(proj_mlog_to_recon[start_ang_idx:end_ang_idx,h_idx,:],
-                                  angles=np.array(ang_rad)[start_ang_idx:end_ang_idx], # In radians
+        _rec_mbir = svmbir.recon(proj_mlog_to_recon,
+                                  angles=np.array(ang_rad), # In radians
                                   weight_type='transmission', 
                                   center_offset=center_offset, 
                                   snr_db=snr_db, p=p, T=T, sharpness=sharpness, 
@@ -886,6 +888,52 @@ def recon_a_slice(sino_mlog_to_recon, proj_mlog_to_recon, h_idx, rot_center, ang
                                  )
         _rec_slice = np.flipud(np.rot90(_rec_mbir[0]))
     return _rec_slice
+# def recon_a_slice(sino_mlog_to_recon, proj_mlog_to_recon, h_idx, rot_center, ang_rad, start_ang_idx, end_ang_idx, recon_algo, ncore, svmbir_path, num_iter=100, apply_log=False):
+#     if recon_algo == 'gridrec':
+#         _rec_slice = rec.gridrec_reconstruction(sino_mlog_to_recon[h_idx,start_ang_idx:end_ang_idx,:], rot_center, angles=ang_rad[start_ang_idx:end_ang_idx], apply_log=apply_log,
+#                                                 ncore=ncore,
+#                                                 ratio=1.0,
+#                                                 filter_name='shepp',
+#                                                 pad=100,
+#                                                )
+#     if recon_algo == 'fbp':
+#         _rec_slice = rec.fbp_reconstruction(sino_mlog_to_recon[h_idx,start_ang_idx:end_ang_idx,:], rot_center, angles=ang_rad[start_ang_idx:end_ang_idx], apply_log=apply_log,
+#                                             ncore=ncore,
+#                                             ramp_win=None,
+#                                             filter_name='hann',
+#                                             pad=None,
+#                                             pad_mode='edge',
+#                                             gpu=False,
+#                                             # gpu=True, block=(16, 16), # Version error 7.8, current version 7.5
+#                                            )
+#     if recon_algo in ['FBP', 'SIRT', 'SART', 'ART', 'CGLS', 'FBP_CUDA', 'SIRT_CUDA', 'SART_CUDA', 'CGLS_CUDA']:
+#         _rec_slice = rec.astra_reconstruction(sino_mlog_to_recon[h_idx,start_ang_idx:end_ang_idx,:], rot_center, angles=ang_rad[start_ang_idx:end_ang_idx], apply_log=apply_log,
+#                                               method=recon_algo,
+#                                               num_iter=num_iter,
+#                                               ncore=ncore,
+#                                               ratio=1.0,
+#                                               filter_name='hann',
+#                                               pad=None,
+#                                              )
+#     if recon_algo == 'svmbir':
+#         T = 2.0
+#         p = 1.2
+#         sharpness = 0.0
+#         snr_db = 30.0
+#         center_offset= -(proj_mlog_to_recon.shape[2]/2 - rot_center)
+#         _rec_mbir = svmbir.recon(proj_mlog_to_recon[start_ang_idx:end_ang_idx,h_idx,:],
+#                                   angles=np.array(ang_rad)[start_ang_idx:end_ang_idx], # In radians
+#                                   weight_type='transmission', 
+#                                   center_offset=center_offset, 
+#                                   snr_db=snr_db, p=p, T=T, sharpness=sharpness, 
+#                                   positivity=False,
+#                                   max_iterations=num_iter,
+#                                   num_threads= 112,
+#                                   verbose=1,# verbose: display of reconstruction: 0 is minimum, 1 is regular
+#                                   svmbir_lib_path = svmbir_path
+#                                  )
+#         _rec_slice = np.flipud(np.rot90(_rec_mbir[0]))
+#     return _rec_slice
 ################ change save path for your own
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/autoreduce/rockit/" + sample_name# + "_vo"
 # save_to = "/HFIR/CG1D/IPTS-"+ipts+"/shared/processed_data/rockit/" + sample_name + "_all"
