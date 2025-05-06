@@ -830,7 +830,7 @@ def recon_slice_by_slice(sino_to_recon, proj_mlog_to_recon, rot_center, ang_rad,
     # Only run this cell if the previous one failed. This cell will recon and save slice by slice
     print('Slice by slice saving to: {}'.format(save_to))
     t0 = timeit.default_timer()
-    for h_idx in tqdm(range(sino_mlog_to_recon.shape[0])):
+    for h_idx in tqdm(range(sino_to_recon.shape[0])):
         _rec_slice = recon_a_slice(sino_to_recon[h_idx,start_ang_idx:end_ang_idx,:], proj_mlog_to_recon[start_ang_idx:end_ang_idx,h_idx,:], 
                                    rot_center, ang_rad[start_ang_idx:end_ang_idx], recon_algo, ncore, svmbir_path, num_iter=num_iter, apply_log=apply_log)
         _rec_slice = crop(_rec_slice, recon_crop_roi_dict['left'], recon_crop_roi_dict['right'], recon_crop_roi_dict['top'], recon_crop_roi_dict['bottom'], recon_crop)
