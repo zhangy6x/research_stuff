@@ -120,23 +120,33 @@ def get_list_by_ang(name_list: list, golden_ratio=False):
     return fname, ang_deg, ang_rad, ind
 
 
+# def get_fname_ind_str(name_list: list):
+#     ind = []
+#     ind_dict_random = {}
+#     ind_dict_sorted = {}
+#     for e_name in name_list:
+#         _split = e_name.split('_')
+#         _index_tiff = _split[-1]
+#         _index = _index_tiff.split('.')[0]
+#         index = int(_index)
+#         ind.append(index)
+#         ind_dict_random[index] = e_name
+#     ind = sorted(ind)
+#     for n, e_ind in enumerate(ind):
+#         ind_dict_sorted[n] = ind_dict_random[e_ind]
+
+#     return list(ind_dict_sorted.values()), ind
+
 def get_list(name_list: list):
-    ind = []
-    ind_dict_random = {}
-    ind_dict_sorted = {}
-    for e_name in name_list:
-        _split = e_name.split('_')
-        _index_tiff = _split[-1]
-        _index = _index_tiff.split('.')[0]
-        index = int(_index)
-        ind.append(index)
-        ind_dict_random[index] = e_name
-    ind = sorted(ind)
-    for n, e_ind in enumerate(ind):
-        ind_dict_sorted[n] = ind_dict_random[e_ind]
+    ind = range(len(name_list))
+    return sorted(name_list), ind
 
-    return list(ind_dict_sorted.values()), ind
-
+def hdf5_to_sample_name(hdf5_name:str):
+    _name_str_list = hdf5_name.split('_')
+    _name_str_list.pop(-1)
+    _name_str_list.pop(-1)
+    sample_name = '_'.join(_name_str_list)
+    return sample_name
 
 def _init_arr_from_stack(fname, number_of_files, slc=None, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default):
     """
@@ -301,6 +311,7 @@ def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_siz
         ct_name, idx_list = get_list(ct_list)
         ang_rad = tomopy.angles(len(idx_list), ang1=ang1, ang2=ang2)  # Default 360 degree rotation
         ang_deg = np.rad2deg(ang_rad)
+    
     proj = read_tiff_stack(fdir=fdir, fname=ct_name, pixel_bin_size=pixel_bin_size, func=func, dtype=dtype)
     if img_per_ang > 1:
         print("{} images per angle, image stack binning...".format(img_per_ang))
@@ -315,14 +326,16 @@ def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_siz
             func_stack = np.median
             dtype_stack = np.uint16
         proj = block_reduce(proj, block_size=(img_per_ang, 1, 1), func=func_stack)#, func_kwargs={'dtype': dtype_stack})
+    proj360_ind = find_idx_by_ang(ang_deg, 360)
     proj180_ind = find_idx_by_ang(ang_deg, 180)
     proj000_ind = find_idx_by_ang(ang_deg, 0)
     print('Found index of 180 degree projections: {} of angle {}'.format(proj180_ind[0], proj180_ind[1]))
-    print('Found index of 0 degree projections: {} of angle {}'.format(proj000_ind[0], proj000_ind[1]))
+    print('Found index of 0 degree or first projections: {} of angle {}'.format(proj000_ind[0], proj000_ind[1]))
+    print('Found index of 360 degree or last projections: {} of angle {}'.format(proj360_ind[0], proj360_ind[1]))
     print('Loading {} CT projections...'.format(len(ct_name)))
     print('{} CT projections loaded!'.format(len(ct_name)))
     print('Shape: {}'.format(proj.shape))
-    return proj, ang_deg, ang_rad, proj180_ind[0], proj000_ind[0], ct_name
+    return proj, ang_deg, ang_rad, proj000_ind[0], proj180_ind[0], proj360_ind[0], ct_name
 
 
 # def load_ob(fdir, name="ob*"):
