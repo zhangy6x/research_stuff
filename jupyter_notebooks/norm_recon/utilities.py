@@ -137,6 +137,27 @@ def get_list_by_ang(name_list: list, golden_ratio=False):
 
 #     return list(ind_dict_sorted.values()), ind
 
+def get_idx_num(fname: str):
+    _split = fname.split('_')
+    _index_tiff = _split[-1]
+    _index = _index_tiff.split('.')[0]
+    index = int(_index)
+    return index
+
+def sort_by_idx(fname_list: list):
+    ind = []
+    ind_dict_random = {}
+    ind_dict_sorted = {}
+    for e_name in fname_list:
+        index = get_idx_num(e_name)
+        ind.append(index)
+        ind_dict_random[index] = e_name
+    ind = sorted(ind)
+    for n, e_ind in enumerate(ind):
+        ind_dict_sorted[n] = ind_dict_random[e_ind]
+
+    return list(ind_dict_sorted.values())
+
 def get_list(name_list: list):
     ind = range(len(name_list))
     return sorted(name_list), ind
@@ -452,12 +473,11 @@ def filter_list(name_list:list, pattern=None):
 
 
 def add_idx_to_front(old: str, index_min=0):
-    old_index = get_index_num(old)
-    end_num = int(old_index)
-    new_num = end_num - index_min
-    new_index = f'{index:04}'
-    new = new_index + "_" + old
-    return old
+    old_index = get_idx_num(old)
+    new_idx_num = old_index - index_min
+    new_idx_str = f'{new_idx_num:04}'
+    new = new_idx_str + "_" + old
+    return new
 
 
 def get_last_str(fname: str):
