@@ -10,7 +10,8 @@ import glob
 import tomopy
 import random
 import h5py as h5f
-# import svmbir
+import svmbir
+import mbirjax
 from tqdm import tqdm
 import bm3d_streak_removal as bm3d
 from bm3d_streak_removal_cuda import multiscale_streak_removal, normalize_data, extreme_streak_attenuation, default_horizontal_bins, full_streak_pipeline
@@ -27,6 +28,17 @@ pix_bin_size_default = 1
 pix_bin_func_default = np.sum
 pix_bin_dtype_default = np.uint16
 img_per_ang_default = 1
+
+# SVMBIR reconstruction parameters
+svmbir_parameters = {
+    'sharpness': 1,#0,
+    'max_resolutions': 2,
+    'positivity': False,
+    'snr_db': 25,#30,
+    'max_iterations': 15,#20,
+    'T': 2,
+    'p': 1.2,
+}
 
 def get_deg(fname: str):
     _split = fname.split('_')
@@ -779,7 +791,8 @@ def generate_randint_list(num_of_ele, range_min, range_max):
     _list.sort()
     return _list
 
-def recon_full_volume(proj_mlog_to_recon, rot_center, ang_rad, recon_algo, ncore, svmbir_path, pix_um=None, num_iter=100, apply_log=False):
+def recon_full_volume(proj_mlog_to_recon, rot_center, ang_rad, recon_algo, ncore, svmbir_path, pix_um=None, num_iter=100, apply_log=False,
+                     mbir_verbose=1, mbir_print_logs=False, mbir_weights=None, mbir_max_iter=svmbir_parameters['max_iterations']):
     t0 = timeit.default_timer()
     ####################### tomopy algorithms (gridrec and fbp are faster than algotom) ##########################
     if recon_algo in ['art', 'bart', 'fbp', 'gridrec',
@@ -832,26 +845,42 @@ def recon_full_volume(proj_mlog_to_recon, rot_center, ang_rad, recon_algo, ncore
     #                                   gpu=True, block=(16, 16), # Version error 7.8, current version 7.5
                                       )
         recon = np.moveaxis(recon, 1, 0)
-    ################################################### MBIR #####################################################
+    ################################################### svMBIR #####################################################
     if recon_algo == 'svmbir':
-        T = 2.0
-        p = 1.2
-        sharpness = 0.0
-        snr_db = 30.0
+        T = svmbir_parameters['T']
+        p = svmbir_parameters['p']
+        sharpness = svmbir_parameters['sharpness']
+        snr_db = svmbir_parameters['snr_db']
         center_offset= -(proj_mlog_to_recon.shape[2]/2 - rot_center)
         recon = svmbir.recon(
             proj_mlog_to_recon,
             angles=np.array(ang_rad), # In radians
-            weight_type='transmission', 
+            weight_type=mbir_weights,#'transmission', 
             center_offset=center_offset, 
             snr_db=snr_db, p=p, T=T, sharpness=sharpness, 
             positivity=False,
-            max_iterations=num_iter,
+            max_iterations=mbir_max_iter,
             num_threads= 112,
-            verbose=1,# verbose: display of reconstruction: 0 is minimum, 1 is regular
+            verbose=mbir_verbose,# verbose: display of reconstruction: 0 is minimum, 1 is regular
             svmbir_lib_path = svmbir_path,
         )
         recon = np.fliplr(np.rot90(recon, k=1, axes=(1,2)))
+    ################################################### MBIR JAX #####################################################
+    if recon_algo == "mbirjax":
+        _proj_shape = proj_mlog_to_recon.shape
+        _ct_model = mbirjax.ParallelBeamModel(_proj_shape, np.array(ang_rad))
+        _ct_model.set_params(sharpness=svmbir_parameters['sharpness'],
+                            verbose=mbir_verbose,#Change to 0 for silent operation or 2 or 3 for more detailed output
+                            use_gpu="full",
+                            det_channel_offset=-(_proj_shape[2]/2 - rot_center),
+                            snr_db=svmbir_parameters['snr_db'],
+                           )
+        recon, rec_params = _ct_model.recon(proj_mlog_to_recon,
+                                           print_logs=mbir_print_logs,
+                                           weights=mbir_weights,
+                                           max_iterations=mbir_max_iter
+                                          )
+        recon = np.swapaxes(recon, 0, 2)
     ##################################
     if pix_um is not None:
         pix_cm = pix_um/10000
@@ -861,13 +890,14 @@ def recon_full_volume(proj_mlog_to_recon, rot_center, ang_rad, recon_algo, ncore
     return recon
 
 def recon_slice_by_slice(sino_to_recon, proj_mlog_to_recon, rot_center, ang_rad, recon_algo, ncore, svmbir_path, save_to, apply_log,
-                         recon_crop=False, recon_crop_roi_dict=None, pix_um=None, num_iter=100):
+                         recon_crop=False, recon_crop_roi_dict=None, pix_um=None, num_iter=100, mbir_verbose=1, mbir_print_logs=False, mbir_weights=None, mbir_max_iter=svmbir_parameters['max_iterations']):
     # Only run this cell if the previous one failed. This cell will recon and save slice by slice
     print('Slice by slice saving to: {}'.format(save_to))
     t0 = timeit.default_timer()
     for h_idx in tqdm(range(sino_to_recon.shape[0])):
-        _rec_slice = recon_a_slice(sino_to_recon[h_idx,:,:], proj_mlog_to_recon[:,h_idx,:], 
-                                   rot_center, ang_rad, recon_algo, ncore, svmbir_path, num_iter=num_iter, apply_log=apply_log)
+        _rec_slice = recon_a_slice(sino_to_recon[h_idx,:,:], proj_mlog_to_recon[:,[h_idx],:], 
+                                   rot_center, ang_rad, recon_algo, ncore, svmbir_path, num_iter=num_iter, apply_log=apply_log,
+                                   mbir_verbose=mbir_verbose, mbir_print_logs=mbir_print_logs, mbir_weights=mbir_weights, mbir_max_iter=mbir_max_iter)
         _rec_slice = crop(_rec_slice, recon_crop_roi_dict['left'], recon_crop_roi_dict['right'], recon_crop_roi_dict['top'], recon_crop_roi_dict['bottom'], recon_crop)
         if pix_um is not None:
             pix_cm = pix_um/10000
@@ -877,7 +907,7 @@ def recon_slice_by_slice(sino_to_recon, proj_mlog_to_recon, rot_center, ang_rad,
     t1 = timeit.default_timer()
     print("Time cost {} min".format((t1-t0)/60))
 
-def recon_a_slice(sino_to_recon, proj_mlog_to_recon, rot_center, ang_rad, recon_algo, ncore, svmbir_path, apply_log, num_iter=100):
+def recon_a_slice(sino_to_recon, proj_mlog_to_recon, rot_center, ang_rad, recon_algo, ncore, svmbir_path, apply_log, num_iter=100, mbir_verbose=1, mbir_print_logs=False, mbir_weights=None, mbir_max_iter=svmbir_parameters['max_iterations']):
     if recon_algo == 'gridrec':
         _rec_slice = rec.gridrec_reconstruction(sino_to_recon, rot_center, angles=ang_rad, apply_log=apply_log,
                                                 ncore=ncore,
@@ -905,23 +935,37 @@ def recon_a_slice(sino_to_recon, proj_mlog_to_recon, rot_center, ang_rad, recon_
                                               pad=None,
                                              )
     if recon_algo == 'svmbir':
-        T = 2.0
-        p = 1.2
-        sharpness = 0.0
-        snr_db = 30.0
-        center_offset= -(proj_mlog_to_recon.shape[2]/2 - rot_center)
+        T = svmbir_parameters['T']
+        p = svmbir_parameters['p']
+        sharpness = svmbir_parameters['sharpness']
+        snr_db = svmbir_parameters['snr_db']
         _rec_mbir = svmbir.recon(proj_mlog_to_recon,
                                   angles=np.array(ang_rad), # In radians
                                   weight_type='transmission', 
-                                  center_offset=center_offset, 
+                                  center_offset=-(proj_mlog_to_recon.shape[2]/2 - rot_center), 
                                   snr_db=snr_db, p=p, T=T, sharpness=sharpness, 
                                   positivity=False,
-                                  max_iterations=num_iter,
+                                  max_iterations=mbir_max_iter,
                                   num_threads= 112,
-                                  verbose=1,# verbose: display of reconstruction: 0 is minimum, 1 is regular
+                                  verbose=mbir_verbose,# verbose: display of reconstruction: 0 is minimum, 1 is regular
                                   svmbir_lib_path = svmbir_path
                                  )
         _rec_slice = np.flipud(np.rot90(_rec_mbir[0]))
+    if recon_algo == 'mbirjax':
+        _proj_shape = proj_mlog_to_recon.shape
+        ct_model = mbirjax.ParallelBeamModel((_proj_shape[0], 1, _proj_shape[-1]), np.array(ang_rad))
+        ct_model.set_params(sharpness=svmbir_parameters['sharpness'],
+                            verbose=mbir_verbose,#Change to 0 for silent operation or 2 or 3 for more detailed output
+                            use_gpu="full",
+                            det_channel_offset=-(_proj_shape[2]/2 - rot_center),
+                            snr_db=svmbir_parameters['snr_db'],
+                            
+                           )
+        _rec_slice, _rec_params = ct_model.recon(proj_mlog_to_recon,
+                                                 print_logs=mbir_print_logs,
+                                                 weights=mbir_weights,
+                                                 max_iterations=mbir_max_iter
+                                                )
     return _rec_slice
 
 def gen_ang_idx_list(ang_list, rule, gap=1, proj180_idx=None, idx_offset=0, start_idx=None, end_idx=None):
