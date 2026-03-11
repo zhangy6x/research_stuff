@@ -10,15 +10,20 @@ import glob
 import tomopy
 import random
 import h5py as h5f
-import svmbir
+# import svmbir
 import mbirjax
 from tqdm import tqdm
-import bm3d_streak_removal as bm3d
+from bm3dornl import bm3d_ring_artifact_removal
+from bm3dornl.fourier_svd import fourier_svd_removal
+# import bm3d_streak_removal as bm3d
 from bm3d_streak_removal_cuda import multiscale_streak_removal, normalize_data, extreme_streak_attenuation, default_horizontal_bins, full_streak_pipeline
 from skimage.measure import block_reduce
 from PIL import Image
 import timeit
 import algotom.rec.reconstruction as rec
+import algotom.prep.removal as rem
+from bm3dornl.fourier_svd import fourier_svd_removal
+from bm3dornl import bm3d_ring_artifact_removal
 
 # slit_box_corners = np.array([[ None,  None], [ None, None], [None, None], [None,  None]])
 
@@ -329,12 +334,22 @@ def get_name_and_idx(fdir):
     return fname, idx_list
 
 
-def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_name=None, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default, img_per_ang=img_per_ang_default, mars_ct=True, golden_ratio=False):
+def load_ct(fdir, ang1=0, ang2=360, name="raw*", filter_out=None, filter_name=None, gap=0, pixel_bin_size=pix_bin_size_default, func=pix_bin_func_default, dtype=pix_bin_dtype_default, img_per_ang=img_per_ang_default, mars_ct=True, golden_ratio=False):
     if mars_ct:
         print("Normal CT naming convention")
         ct_list = os.listdir(fdir)
         if filter_name is not None:
             ct_list = filter_list(ct_list, filter_name)
+        if filter_out is not None:
+            if type(filter_out) != list:
+                raise TypeError("'filter_out' must be a list.\n{}".format(filter_list(ct_list, filter_out)))
+            else:
+                ct_list = remove_fnames(ct_list, filter_out)
+        if gap > 0:
+            assert img_per_ang == 1
+            print("Total number of projections for the selected CT scan: {}".format(len(ct_list)))
+            ct_list = ct_list[::gap+1]
+            print("Total number of projections after applying gap: {}".format(len(ct_list)))
         # ct_name, ang_deg, theta, idx_list = get_ind_list(ct_list)
 #         if img_per_ang >1:
 #             ct_list = ct_list[num_img_per_ang-1::num_img_per_ang]
@@ -693,32 +708,70 @@ def estimate_noise_free_sinogram(sino_in: np.ndarray):
     tmp = (tmp - np.min(tmp)) / (np.max(tmp) - np.min(tmp)) * (max_org - min_org) + min_org
     return tmp
 
-def remove_ring(proj_mlog, ring_algo, ncore=None):
-    if ring_algo == 'Vo':
-        # nchunk = int(proj_mlog.shape[0]/ncore) + 1
-        # print("Chunk size: ", nchunk)
-        proj_mlog_rmv = tomopy.remove_all_stripe(proj_mlog, 
-                                                 ncore=ncore, 
-    #                                              nchunk=nchunk
-                                                )
+def remove_ring(sino_mlog, ring_algo):
+    assert ring_algo in [None, 'vo', 'bm3dornl', 'svd']
+    if ring_algo == 'vo':
+        sino_mlog_rmv = rem.remove_all_stripe(sinogram=sino_mlog)
+    if ring_algo == 'bm3dornl':
+        sino_mlog_rmv = bm3d_ring_artifact_removal(
+            sino_mlog,
+            mode="streak",
+            sigma_random=0.0005,
+            patch_size=8,           # Patch size (7 or 8 recommended)
+            step_size=4,            # Step size for patch extraction
+            search_window=40,       # Max search distance
+            max_matches=64,         # Similar patches per 3D group
+            batch_size=32,          # Batch size for stack processing
+        )
+        
+    if ring_algo == 'svd':
+        sino_mlog_rmv = fourier_svd_removal(sino_mlog)
+    
+    if ring_algo is None:
+        # proj_mlog_rmv = proj_mlog[:]
+        sino_mlog_rmv = sino_mlog[:]
+        
+    return sino_mlog_rmv.astype(np.float32)
+
+def remove_ring_stack(sino_mlog, ring_algo, batch_size=32):
+    assert ring_algo in [None, 'bm3d', 'bm3dgpu', 'bm3dornl', 'vo', 'svd']
+    if ring_algo in ['bm3dornl', 'vo', 'svd']:
+        sino_mlog_rmv = remove_ring_batch(sino_mlog, ring_algo, batch_size)
+    else:
+        proj_mlog = np.moveaxis(sino_mlog, 1, 0)
+        sino_mlog_rmv = remove_ring_bm3d(proj_mlog, ring_algo)
+    return sino_mlog_rmv
+
+def remove_ring_batch(sino_mlog, ring_algo, batch_size=32):
+    # Process batch-by-batch with your own progress bar
+    output = np.empty_like(sino_mlog, dtype=np.float32)
+    if batch_size != 1:
+        for i in tqdm(range(0, sino_mlog.shape[0], batch_size), desc="Ring removal {}".format(ring_algo)):
+            end = min(i + batch_size, sino_mlog.shape[0])
+            output[i:end] = remove_ring(sino_mlog[i:end], ring_algo)
+    else:
+        for i in tqdm(range(sino_mlog.shape[0]), desc="Ring removal {}".format(ring_algo)):
+            output[i] = remove_ring(sino_mlog[i], ring_algo)
+    return output.astype(np.float32)
+
+def remove_ring_bm3d(proj_mlog, ring_algo):
+    assert ring_algo in [None, 'bm3d', 'bm3dgpu']
     if ring_algo == 'bm3d':
         print("Perform 'extreme streak attenuation' (detection + median filter) on a 3-D stack of projections. First dimension should be angle.")
         proj_mlog_bm3d = bm3d.extreme_streak_attenuation(proj_mlog)
         print("Remove sinogram (after log transform) streak noise using multi-scale BM3D-based denoising procedure.")
         proj_mlog_rmv = bm3d.multiscale_streak_removal(proj_mlog_bm3d)
-
+        
     if ring_algo == 'bm3dgpu':
         print("Perform 'extreme streak attenuation' (detection + median filter) on a 3-D stack of projections. First dimension should be angle.")
         proj_mlog_bm3d = extreme_streak_attenuation(proj_mlog)
         print("Remove sinogram (after log transform) streak noise using multi-scale BM3D-based denoising procedure.")
         proj_mlog_rmv = multiscale_streak_removal(proj_mlog_bm3d)
     
-    #if ring_algo == 'bm3dornl':
-    #    sino_mlog_rmv = bm3d_ring_artifact_removal(sino_mlog_tilt[slice_num])
-    
     if ring_algo is None:
         proj_mlog_rmv = proj_mlog[:]
-    return proj_mlog_rmv
+    sino_mlog_rmv = np.moveaxis(proj_mlog_rmv, 1, 0)
+    return sino_mlog_rmv.astype(np.float32)
 
 def remove_nan(array, val, ncore):
     if np.isnan(array).any():
@@ -772,15 +825,29 @@ def plot_images(imgs, figsize_in_inches=(5,5)):
         axs[col].imshow(cv.cvtColor(img, cv.COLOR_BGR2RGB))
     plt.show()
 
-def plot_imgs_from_stack(img_stack, idx_list, vmin=0.8, vmax=1.2, fig_per_row=4, figsize=(20,20)):
+def plot_imgs_from_stack(img_stack, idx_list, title_list=None, vmin=0.8, vmax=1.2, fig_per_row=4, figsize=(20,20), cmap='viridis', colorbar=True, cmap_label=None, suptitle=None):
     num_of_row = int(len(idx_list)/fig_per_row)
     if len(idx_list)%fig_per_row != 0:
         num_of_row = num_of_row + 1
     f, ax = plt.subplots(num_of_row, fig_per_row, figsize=figsize)
     for m, ea in enumerate(idx_list):
         _loc = int(m/fig_per_row)
-        ax[_loc][m-(_loc*fig_per_row)].imshow(img_stack[ea], vmin=vmin, vmax=vmax)
-        ax[_loc][m-(_loc*fig_per_row)].set_title('Index={}'.format(ea))
+        if num_of_row == 1 or fig_per_row == 1:
+            _im = ax[m-(_loc*fig_per_row)].imshow(img_stack[ea], vmin=vmin, vmax=vmax, cmap=cmap)
+            if title_list is None:
+                ax[m-(_loc*fig_per_row)].set_title('Index={}'.format(ea))
+            else:
+                ax[m-(_loc*fig_per_row)].set_title(title_list[m])
+        else:
+            _im = ax[_loc][m-(_loc*fig_per_row)].imshow(img_stack[ea], vmin=vmin, vmax=vmax, cmap=cmap)
+            if title_list is None:
+                ax[_loc][m-(_loc*fig_per_row)].set_title('Index={}'.format(ea))
+            else:
+                ax[_loc][m-(_loc*fig_per_row)].set_title(title_list[m])
+    if colorbar:
+        f.colorbar(_im, ax=ax, label=cmap_label)
+    if suptitle != None:
+        plt.suptitle(suptitle)
 
 def generate_randint_list(num_of_ele, range_min, range_max):
     # Create an empty list
